@@ -1,4 +1,30 @@
-vim.api.nvim_create_user_command("DiffClipboard", function()
+_G.my_commands = {}
+
+local function user_cmd(name, command, opts)
+	opts = opts or {}
+	vim.api.nvim_create_user_command(name, command, opts)
+	_G.my_commands[name] = {func=command, desc=opts.desc}
+end
+
+user_cmd("MyCommands", function()
+	for name, v in pairs(_G.my_commands) do
+		if v.desc then
+			vim.print(name .. " (" .. v.desc .. ")")
+		else
+			vim.print(name)
+		end
+	end
+end, { desc = "help" })
+
+-- Make current buffer state the new origin (clears undo, also persistent undo).
+user_cmd("ResetUndo", function()
+	vim.opt.undolevels = -1
+	vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.api.nvim_buf_get_lines(0, 0, -1, false))
+	vim.opt.undolevels = 1000
+	vim.bo.modified = false
+end)
+
+user_cmd("DiffClipboard", function()
 	local clipboard_text = vim.fn.getreg("+") -- prints warning on empty clipboard
 	if clipboard_text == "" then
 		return
@@ -21,16 +47,20 @@ vim.api.nvim_create_user_command("DiffClipboard", function()
 	vim.api.nvim_buf_set_lines(buf_scratch, 0, -1, false, lines)
 
 	-- Create scratch window and attach buffer
-	vim.api.nvim_command("rightbelow vsplit")
-	local win_scratch = vim.api.nvim_get_current_win()
-	vim.api.nvim_win_set_buf(win_scratch, buf_scratch)
+	local win_scratch = vim.api.nvim_open_win(buf_scratch, false, { split = "right", win=0 })
 
 	-- Set diffmode
-	vim.api.nvim_win_call(win, function()
-		vim.cmd("diffthis")
-	end)
-	vim.api.nvim_win_call(win_scratch, function()
-		vim.cmd("diffthis")
+	vim.api.nvim_win_call(win, vim.cmd.diffthis)
+	vim.api.nvim_win_call(win_scratch, vim.cmd.diffthis)
+
+	-- Copy filetype
+	local buf = vim.api.nvim_win_get_buf(win)
+	local filetype = vim.api.nvim_get_option_value("filetype", { buf = buf })
+	vim.api.nvim_set_option_value("filetype", filetype, { buf = buf_scratch })
+
+	-- Reset [Clipboard] history
+	vim.api.nvim_win_call(win_scratch, _G.my_commands.ResetUndo)
+end, { desc = "split diff with system clipboard" })
 	end)
 
 	-- Focus back to original window
