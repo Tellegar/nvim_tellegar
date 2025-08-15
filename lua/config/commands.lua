@@ -61,6 +61,19 @@ user_cmd("DiffClipboard", function()
 	-- Reset [Clipboard] history
 	vim.api.nvim_win_call(win_scratch, _G.my_commands.ResetUndo)
 end, { desc = "split diff with system clipboard" })
+
+-- TODO arguments, like split direction
+user_cmd("Scratch", function()
+	-- take note of filetype of focused buf
+	local buf_focused_before = vim.api.nvim_get_current_buf()
+	local filetype = vim.api.nvim_get_option_value("filetype", { buf = buf_focused_before })
+
+	local buf_scratch = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_name(buf_scratch, "[Scratch]")
+	vim.api.nvim_open_win(buf_scratch, true, { split = "left", win=0 })
+
+	vim.api.nvim_set_option_value("filetype", filetype, { buf = buf_scratch })
+end, { desc = "opens a scratch buffer" })
 	end)
 
 	-- Focus back to original window
