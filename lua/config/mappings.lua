@@ -110,6 +110,30 @@ vim.keymap.set("n", "<C-u>", function()
 	vim.cmd.UndotreeFocus()
 end)
 
+-- which-key
+plugin_keymap.which_key = {
+	{
+		".",
+		function()
+			require("which-key").show({
+				global = false,
+				loop = true,
+			})
+		end,
+		desc = "show this menu"
+	},
+	{
+		"?",
+		function()
+			require("which-key").show({
+				global = true,
+				loop = true,
+			})
+		end,
+		desc = "show this menu"
+	},
+}
+
 return {
 	plugin_keymap = plugin_keymap
 }
