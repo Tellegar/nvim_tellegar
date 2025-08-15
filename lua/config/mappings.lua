@@ -94,6 +94,22 @@ autocmd('LspAttach', {
 	end
 })
 
+-- undotree
+plugin_keymap.undotree = {
+	{
+		"<C-u>",
+		function()
+			vim.cmd.UndotreeToggle()
+			vim.cmd.UndotreeFocus()
+		end,
+		desc = "Toggle undotree"
+	},
+}
+vim.keymap.set("n", "<C-u>", function()
+	vim.cmd.UndotreeToggle()
+	vim.cmd.UndotreeFocus()
+end)
+
 return {
 	plugin_keymap = plugin_keymap
 }
