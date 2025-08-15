@@ -1,112 +1,97 @@
 return {
-  {
-    "williamboman/mason.nvim",
-    cmd = { "Mason", "MasonInstall", "MasonUpdate" },
-    opts = {
-      PATH = "skip",
-      ui = {
-        icons = {
-          package_pending = " ",
-          package_installed = " ",
-          package_uninstalled = " ",
-        },
-      },
-      max_concurrent_installers = 10,
-    },
-  },
-  {
-    "neovim/nvim-lspconfig",
-    event = "User FilePost",
-    config = function()
-      local M = {}
-      local map = vim.keymap.set
+	{	"neovim/nvim-lspconfig",
+		dependencies = {
+			"williamboman/mason.nvim",
+			"williamboman/mason-lspconfig.nvim",
+			-- "stevearc/conform.nvim",
+			-- "hrsh7th/cmp-nvim-lsp",
+			-- "hrsh7th/cmp-buffer",
+			-- "hrsh7th/cmp-path",
+			-- "hrsh7th/cmp-cmdline",
+			-- "L3MON4D3/LuaSnip",
+			-- "saadparwaiz1/cmp_luasnip",
+			{ "j-hui/fidget.nvim", opts = {} }, -- lsp notifications?
+			-- { "folke/lazydev.nvim", ft = "lua", opts = {} },
+		},
+		config = function()
+			require("mason").setup()
+			require("mason-lspconfig").setup()
+			require("config.lsp_conf")
 
-      -- export on_attach & capabilities
-      M.on_attach = function(_, bufnr)
-        local function opts(desc)
-          return { buffer = bufnr, desc = "LSP " .. desc }
-        end
+			-- require("conform").setup{
+			-- 	formatters_by_ft = {
+			-- 		lua = { "stylua" },
+			-- 		python = { "black" },
+			-- 		sh = { "shfmt" },
+			-- 	}
+			-- }
 
-        map("n", "gD", vim.lsp.buf.declaration, opts "Go to declaration")
-        map("n", "gd", vim.lsp.buf.definition, opts "Go to definition")
-        map("n", "<leader>wa", vim.lsp.buf.add_workspace_folder, opts "Add workspace folder")
-        map("n", "<leader>wr", vim.lsp.buf.remove_workspace_folder, opts "Remove workspace folder")
+			-- local cmp = require("cmp")
+			-- cmp.setup{
+			-- 	snippet = {
+			-- 		expand = function(args)
+			-- 			require("luasnip").lsp_expand(args.body)
+			-- 		end
+			-- 	},
+			-- 	mapping = cmp.mapping.preset.insert{
+			-- 		["<S-Tab>"] = cmp.mapping.select_prev_item(),
+			-- 		["<Tab>"] = cmp.mapping.select_next_item(),
+			-- 		["<CR>"] = cmp.mapping.confirm({ select = true }),
+			-- 	},
+			-- 	sources = cmp.config.sources{ -- idk what does this change
+			-- 		{ name = "nvim_lsp" },
+			-- 		{ name = "luasnnip" },
+			-- 		{ name = "buffer" },
+			-- 		{ name = "path" },
+			-- 	}
+			-- }
 
-        map("n", "<leader>wl", function()
-          print(vim.inspect(vim.lsp.buf.list_workspace_folders()))
-        end, opts "List workspace folders")
-
-        map("n", "<leader>D", vim.lsp.buf.type_definition, opts "Go to type definition")
-        map("n", "<leader>ra", require "nvchad.lsp.renamer", opts "NvRenamer")
-      end
-
-      -- disable semanticTokens
-      M.on_init = function(client, _)
-        if client.supports_method "textDocument/semanticTokens" then
-          client.server_capabilities.semanticTokensProvider = nil
-        end
-      end
-
-      M.capabilities = vim.lsp.protocol.make_client_capabilities()
-
-      M.capabilities.textDocument.completion.completionItem = {
-        documentationFormat = { "markdown", "plaintext" },
-        snippetSupport = true,
-        preselectSupport = true,
-        insertReplaceSupport = true,
-        labelDetailsSupport = true,
-        deprecatedSupport = true,
-        commitCharactersSupport = true,
-        tagSupport = { valueSet = { 1 } },
-        resolveSupport = {
-          properties = {
-            "documentation",
-            "detail",
-            "additionalTextEdits",
-          },
-        },
-      }
-
-      M.defaults = function()
-        dofile(vim.g.base46_cache .. "lsp")
-        require("nvchad.lsp").diagnostic_config()
-
-        vim.api.nvim_create_autocmd("LspAttach", {
-          callback = function(args)
-            M.on_attach(_, args.buf)
-          end,
-        })
-
-        local lua_lsp_settings = {
-          Lua = {
-            runtime = { version = "LuaJIT" },
-            workspace = {
-              library = {
-                vim.fn.expand "$VIMRUNTIME/lua",
-                vim.fn.stdpath "data" .. "/lazy/ui/nvchad_types",
-                vim.fn.stdpath "data" .. "/lazy/lazy.nvim/lua/lazy",
-                "${3rd}/luv/library",
-              },
-            },
-          },
-        }
-
-        -- Support 0.10 temporarily
-
-        if vim.lsp.config then
-          vim.lsp.config("*", { capabilities = M.capabilities, on_init = M.on_init })
-          vim.lsp.config("lua_ls", { settings = lua_lsp_settings })
-          vim.lsp.enable "lua_ls"
-        else
-          require("lspconfig").lua_ls.setup {
-            capabilities = M.capabilities,
-            on_init = M.on_init,
-            settings = lua_lsp_settings,
-          }
-        end
-      end
-
-      return M
-    end,
-  },
+			vim.diagnostic.config{
+				-- update_in_insert = true,
+				float = {
+					-- focusable = false,
+					-- style = "minimal",
+					-- border = "rounded",
+					source = true,
+					-- header = "",
+					-- prefix = "",
+				}
+			}
+		end
+	},
+	-- {	"nvimtools/none-ls.nvim",
+	-- 	opts = function(_, opts)
+	-- 		local null_ls = require("null-ls")
+	-- 		opts.root_dir = opts.root_dir
+	-- 			or require("null-ls.utils").root_pattern(".null-ls-root", ".neoconf.json", "Makefile", ".git")
+	-- 		opts.sources = vim.list_extend(opts.sources or {}, {
+	-- 			null_ls.builtins.formatting.stylua,
+	-- 			null_ls.builtins.completion.spell,
+	-- 			null_ls.builtins.formatting.black
+	-- 		})
+	-- 	end,
+	-- }
+	{	"hrsh7th/nvim-cmp",
+		dependencies = {
+			"hrsh7th/cmp-nvim-lsp",
+		},
+		config = function()
+			local cmp = require("cmp")
+			vim.o.completeopt = "menu,menuone,noselect"
+			cmp.setup{
+				preselect = cmp.PreselectMode.None,
+				snippet = { expand = function(_) end }, -- no snippets in layer 1
+				mapping = cmp.mapping.preset.insert{
+					["<C-Space>"] = cmp.mapping.complete(),
+					["<C-e>"]     = cmp.mapping.abort(),
+					["<CR>"]      = cmp.mapping.confirm({ select = true }),
+					["<Tab>"]     = cmp.mapping.select_next_item(),
+					["<S-Tab>"]   = cmp.mapping.select_prev_item(),
+				},
+				sources = cmp.config.sources{
+					{ name = "nvim_lsp" },
+				}
+			}
+		end
+	}
 }
