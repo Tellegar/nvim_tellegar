@@ -26,6 +26,7 @@ end
 -- load core config
 Require("config.commands")
 Require("config.mappings")
+Require("config.callbacks")
 Require("config.options")
 Require("config.lazy")
 Require("config.mappings2")
