@@ -1,0 +1,20 @@
+{
+	"debug" : {
+		"build_type" : "Debug",
+		"cmake_usr_args" : {
+			"MY_TREAT_WARNINGS_AS_ERRORS": "OFF"
+		}
+	},
+	"dev-release": {
+		"build_type" : "RelWithDebInfo",
+		"cmake_usr_args": {
+			"MY_TREAT_WARNINGS_AS_ERRORS": "ON"
+		}
+	},
+	"release": {
+		"build_type" : "Release",
+		"cmake_usr_args": {
+			"MY_TREAT_WARNINGS_AS_ERRORS": "ON"
+		}
+	}
+}

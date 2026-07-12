@@ -1,0 +1,22 @@
+{
+	"clang": {
+		"compilers": {
+			"C": "/usr/bin/clang",
+			"CXX": "/usr/bin/clang++"
+		},
+		"query_driver": "/usr/bin/clang++",
+		"generator": "Ninja",
+		"toolchain_file": "/home/tellegar/.config/nvim/cmake/toolchains/clang.cmake"
+	},
+	"gcc": {
+		"compilers": {
+			"C": "/usr/bin/gcc",
+			"CXX": "/usr/bin/g++"
+		},
+		"query_driver": "/usr/bin/g++",
+		"generator": "Ninja",
+		"cmake_usr_args": {
+			"CMAKE_CXX_FLAGS_INIT": "-fmodules-ts"
+		}
+	}
+}
