@@ -30,3 +30,27 @@ Require("config.callbacks")
 Require("config.options")
 Require("config.lazy")
 Require("config.mappings2")
+
+-- in your init.lua
+local ts_indent = vim.fn["nvim_treesitter#indent"]
+
+vim.keymap.set("n", "<leader>sie", function()
+	vim.bo.indentexpr = "v:lua.MyIndentExpr()"
+end, { desc = "set custom indentexpr" })
+
+function _G.MyIndentExpr()
+	local lnum = vim.v.lnum
+	local indent = ts_indent(lnum)
+
+	-- DEBUG: dump matched captures
+	local parser = vim.treesitter.get_parser(0, "cpp") -- adjust ft
+	local tree = parser:parse()[1]
+	local root = tree:root()
+
+	local node = root:descendant_for_range(lnum-1, 0, lnum-1, -1)
+	if node then
+		print("line", lnum, "node", node:type())
+	end
+
+	return indent
+end
