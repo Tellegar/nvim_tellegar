@@ -1,0 +1,28 @@
+return {
+	"olimorris/codecompanion.nvim",
+	dependencies = {
+		-- "nvim-lua/plenary.nvim",
+		-- { "nvim-treesitter/nvim-treesitter", build = ":TSUpdate" },
+	},
+	opts = {
+		adapters = {
+			openrouter = function()
+				return require("codecompanion.adapters").extend("openai", {
+					name = "OpenRouter",
+					env = { api_key = vim.env.OPENROUTER_API_KEY },
+					url = "https://openrouter.ai/api/v1/chat/completions",
+					schema = {
+						model = { default = "anthropic/claude-3.7-sonnet" },
+					},
+					-- max_tokens = { default = 4096 },
+					-- temperature = { default = 0.7 },
+				})
+			end,
+		},
+		strategies = {
+			chat   = { adapter = "openrouter" },
+			inline = { adapter = "openrouter" },
+			agent  = { adapter = "openrouter" },
+		},
+	},
+}
