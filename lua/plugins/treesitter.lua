@@ -1,28 +1,40 @@
 return {
 	{	"nvim-treesitter/nvim-treesitter",
+		enabled = true,
 		branch = "main",
-		-- branch = "master",
 		lazy = false,
 		build = ":TSUpdate",
 		config = function()
-			-- local ok, ts_configs = pcall(require, "nvim-treesitter.configs")
-			-- vim.print("ts_configs: " .. tostring(ok))
-			-- require("nvim-treesitter.configs").setup{
-			-- 	modules = {
-			-- 		highlight = { enable = true },
-			-- 		indent = { enable = true },
-			-- 	},
-			-- 	sync_install = false,
-			-- 	ensure_installed = {},
-			-- 	ignore_install = {},
-			-- 	auto_install = true,
-			-- }
+			-- `main` is a full rewrite: no more `nvim-treesitter.configs`,
+			-- `ensure_installed`/`auto_install`/`highlight`/`indent`/
+			-- `incremental_selection` options. Highlighting, indent, and
+			-- lazy parser install are now our job, wired up by hand below.
+			-- See https://github.com/nvim-treesitter/nvim-treesitter (main
+			-- branch README, "Setup"/"Supported features" sections).
+			require("nvim-treesitter").setup{}
+
+			local parsers = require("nvim-treesitter.parsers")
+			local max_filesize = 100 * 1024 -- 100 KB
+
 			vim.api.nvim_create_autocmd("FileType", {
-				pattern = { "lua" },
-				callback = function()
-					vim.treesitter.start()
-					vim.wo.foldexpr = "v:lua.vim.treesitter.foldexpr()"
-					vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+				group = vim.api.nvim_create_augroup("user_treesitter", { clear = true }),
+				callback = function(ev)
+					local lang = vim.treesitter.language.get_lang(ev.match) or ev.match
+					if not parsers[lang] then
+						return
+					end
+
+					if not vim.list_contains(require("nvim-treesitter").get_installed(), lang) then
+						require("nvim-treesitter").install(lang):wait(120000)
+					end
+
+					local ok, stats = pcall(vim.uv.fs_stat, vim.api.nvim_buf_get_name(ev.buf))
+					if ok and stats and stats.size > max_filesize then
+						return
+					end
+
+					vim.treesitter.start(ev.buf, lang)
+					vim.bo[ev.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
 				end,
 			})
 		end,
@@ -45,5 +57,13 @@ return {
 				on_attach = nil, -- (fun(buf: integer): boolean) return false to disable attaching
 			}
 		end,
+	},
+	{	dir = "~/projects/neovim/namespace-hint.nvim",
+		name = "namespace-hint",
+		ft = "cpp",
+		opts = {}
+		-- config = function()
+		-- 	require("namespace-hint").setup()
+		-- end,
 	},
 }
