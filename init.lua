@@ -2,6 +2,10 @@
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 
+-- ".h" is ambiguous C/C++; default is filetype=cpp. This project's convention
+-- is .h/.c = C, .hpp/.cpp/.cppm = C++, so flip the default to match.
+vim.g.c_syntax_for_h = true
+
 -- dedicated python virtual environment
 vim.g.python3_host_prog = vim.fn.expand("~/.config/nvim/.venv/bin/python")
 -- vim.g.python3_host_prog = vim.fn.expand("/home/tellegar/.config/nvim/.venv/bin/python")

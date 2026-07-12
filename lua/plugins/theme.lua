@@ -50,6 +50,9 @@ return {
 			set_hl(0, "Visual", { bg = "#303030" }) -- visual selection
 
 			set_hl(0, "Whitespace", { fg = "#262b3d" }) -- listchars
+
+			-- set_hl(0, "Cursor", { fg = "#090b10", bg = "#ffcc00" })
+			set_hl(0, "Cursor", { fg = "#090b10", bg = "#ffff00" })
 		end,
 	},
 	{	"nvim-lualine/lualine.nvim",
@@ -57,7 +60,8 @@ return {
 		opts = {},
 	},
 	{	"catgoose/nvim-colorizer.lua",
-		event = "VeryLazy",
+		-- event = "VeryLazy",
+		event = "FileType",
 		opts = {
 			filetypes = { "*" },
 			lazy_load = true,
@@ -73,6 +77,7 @@ return {
 				virtualtext_inline = "before",
 				virtualtext_mode = "background",
 			},
+			user_commands = false,
 		},
 	},
 }

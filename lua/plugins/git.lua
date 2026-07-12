@@ -1,9 +1,11 @@
 return {
-	{
-		"lewis6991/gitsigns.nvim",
+	{	"lewis6991/gitsigns.nvim",
 		event = { "BufReadPre", "BufNewFile" },
 		opts = {
-			-- on_attach = function(buf)
+			attach_to_untracked = false,
+			on_attach = function(buf)
+				-- local fidget = require("fidget")
+				-- fidget.notify("buffer attached", nil, { annote = "GitSigns" })
 			-- 	local gs = package.loaded.gitsigns
 			-- 	local map = function(m, l, r, d) vim.keymap.set(m, l, r, { buffer = buf, desc = d }) end
 			-- 	map("n", "]h", gs.next_hunk, "Next hunk")
@@ -13,7 +15,7 @@ return {
 			-- 	map("n", "<leader>hp", gs.preview_hunk, "Preview hunk")
 			-- 	map("n", "<leader>hb", gs.toggle_current_line_blame, "Toggle blame")
 			-- 	map("n", "<leader>hd", function() gs.diffthis("~") end, "Diff vs HEAD")
-			-- end,
+			end,
 		},
 	},
 	{	"sindrets/diffview.nvim",

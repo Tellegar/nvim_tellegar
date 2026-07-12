@@ -4,6 +4,7 @@ return {
 	opts = {
 		filter = function(mapping)
 			return mapping.desc and mapping.desc ~= ""
+			-- return true
 		end,
 		keys = {
 			scroll_down = "<C-j>",

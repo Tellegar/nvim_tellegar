@@ -7,10 +7,12 @@ local autocmd = vim.api.nvim_create_autocmd
 o.listchars = 'tab:──╴,space:⋅,trail:~,extends:>,precedes:<'
 o.list = true
 
--- intendation
+-- indentdation
 o.tabstop = 4
 o.shiftwidth = 0
 o.expandtab = false
+
+o.cindent = false
 
 -- line numbers
 o.number = true
@@ -31,3 +33,13 @@ autocmd({ "FileType" }, {
 		vim.opt_local.formatoptions:remove({ "o" })
 	end,
 })
+
+autocmd("TextYankPost", {
+	desc = "Highlight when yanking text",
+	group = vim.api.nvim_create_augroup("highlight-yank", { clear = true }),
+	callback = function()
+		vim.hl.on_yank()
+	end
+})
+
+g.python_recommended_style = 0
