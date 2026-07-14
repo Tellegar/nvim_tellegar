@@ -1,6 +1,7 @@
 return {
 	"numToStr/Comment.nvim",
 	opts = {
+		padding = false,
 		mappings = {
 			basic = false,
 			extra = false,

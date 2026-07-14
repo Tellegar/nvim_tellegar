@@ -53,13 +53,37 @@ plugin_keymap.comment = function()
 		comment_api.toggle.linewise.current()
 	end, { desc = "Toggle comment line" })
 	map("x", "<C-/>", function()
-		vim.api.nvim_feedkeys(esc, "nx", false)
-		local mode = vim.fn.visualmode()
+		-- visualmode() reports the *last completed* visual session, not the
+		-- currently active one (":h visualmode()" says to use mode() while
+		-- Visual is still active) -- must read mode() before leaving Visual.
+		-- Also, the '</'> marks aren't finalized until Visual mode is actually
+		-- left, so every branch below escapes before letting Comment.nvim read
+		-- them -- commenting edits text, so ending back in Normal mode after is
+		-- the expected behavior anyway (matches what a real `v`/`V` toggle does).
+		local mode = vim.fn.mode()
+
+		if mode == "\22" then -- <C-v> block mode: comment each line's column-span like a separate `v` selection
+			local _, srow, scol = unpack(vim.fn.getpos("v"))
+			local _, erow, ecol = unpack(vim.fn.getpos("."))
+			if srow > erow then srow, erow = erow, srow end
+			if scol > ecol then scol, ecol = ecol, scol end
+
+			vim.api.nvim_feedkeys(esc, "nx", false) -- exit visual mode
+			for row = srow, erow do
+				-- Comment.nvim's single-row path reads/writes the *cursor* line, not the marks
+				vim.api.nvim_win_set_cursor(0, { row, scol - 1 })
+				vim.api.nvim_buf_set_mark(0, "<", row, scol - 1, {})
+				vim.api.nvim_buf_set_mark(0, ">", row, ecol - 1, {})
+				comment_api.toggle.blockwise("v")
+			end
+			return
+		end
+
+		vim.api.nvim_feedkeys(esc, "nx", false) -- exit visual mode
 		if mode == "v" then
 			comment_api.toggle.blockwise(mode)
-		else
+		else -- "V"
 			comment_api.toggle.linewise(mode)
-			-- TODO "^V" selection to work as multiple "v" selections
 		end
 	end, { desc = "Toggle comment selection" })
 	map("i", "<C-/>", function()
@@ -111,7 +135,7 @@ map("n", "gI", vim.lsp.buf.implementation,  { desc = "vim.lsp.buf.implementation
 
 map("n", "<leader>vf",  function() vim.lsp.buf.format({ async = true }) end, { desc = "vim.lsp.buf.format" })
 map("n", "<leader>vds", vim.lsp.buf.document_symbol, { desc = "vim.lsp.buf.document_symbol" })
-map("n", "<leader>vd",  function()
+map("n", "<leader>vdq",  function()
 	vim.diagnostic.setqflist()
 	vim.cmd.copen()
 end, { desc = "diagnostics to quickfix" })

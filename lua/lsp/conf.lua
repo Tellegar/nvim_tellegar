@@ -27,17 +27,18 @@ vim.lsp.config("clangd", {
 		"cuda", "objc", "objcpp"
 	},
 	root_markers = {
-		".git",
 		"CMakePresets.json",
 		".clangd",
 		".clang-tidy",
 		".clang-format",
 		"compile_commands.json",
 		"compile_flags.txt",
-		"configure.ac"
+		"configure.ac",
+		".git"
 	},
 })
 vim.lsp.enable("clangd") -- not managed by mason
+require("lsp.clangd_modmap_check").setup()
 
 -- vim.lsp.config("qmlls", {
 -- 	cmd = {"qmlls", "-E"}
