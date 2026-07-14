@@ -18,27 +18,11 @@
 -- })
 
 
-vim.lsp.config("clangd", {
-	cmd = require"tasks.cmake_utils.cmake_utils".currentClangdArgs(),
-	filetypes = {
-		"c", "h",
-		"cpp", "hpp",
-		"cppm",
-		"cuda", "objc", "objcpp"
-	},
-	root_markers = {
-		"CMakePresets.json",
-		".clangd",
-		".clang-tidy",
-		".clang-format",
-		"compile_commands.json",
-		"compile_flags.txt",
-		"configure.ac",
-		".git"
-	},
-})
-vim.lsp.enable("clangd") -- not managed by mason
-require("lsp.clangd_modmap_check").setup()
+-- clangd is started per-project-root (not via the static vim.lsp.enable
+-- path) so that multiple C/C++ projects open in different windows/tabs get
+-- independent clients with correct --compile-commands-dir each. See cpp.lua,
+-- which also owns cwd-syncing for neovim-tasks and the :Cpp menu.
+require("cpp").setup()
 
 -- vim.lsp.config("qmlls", {
 -- 	cmd = {"qmlls", "-E"}

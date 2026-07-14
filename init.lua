@@ -29,7 +29,6 @@ Require("config.mappings")
 Require("config.callbacks")
 Require("config.options")
 Require("config.lazy")
-Require("config.mappings2")
 
 -- in your init.lua
 local ts_indent = vim.fn["nvim_treesitter#indent"]
