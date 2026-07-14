@@ -1,13 +1,4 @@
 {
-	"clang": {
-		"compilers": {
-			"C": "/usr/bin/clang",
-			"CXX": "/usr/bin/clang++"
-		},
-		"query_driver": "/usr/bin/clang++",
-		"generator": "Ninja",
-		"toolchain_file": "/home/tellegar/.config/nvim/cmake/toolchains/clang.cmake"
-	},
 	"gcc": {
 		"compilers": {
 			"C": "/usr/bin/gcc",
@@ -17,6 +8,32 @@
 		"generator": "Ninja",
 		"cmake_usr_args": {
 			"CMAKE_CXX_FLAGS_INIT": "-fmodules-ts"
+		}
+	},
+	"clang-libc++": {
+		"compilers": {
+			"C": "/usr/bin/clang",
+			"CXX": "/usr/bin/clang++"
+		},
+		"query_driver": "/usr/bin/clang++",
+		"generator": "Ninja",
+		"cmake_usr_args": {
+			"CMAKE_CXX_FLAGS_INIT": "-stdlib=libc++",
+			"CMAKE_EXE_LINKER_FLAGS_INIT": "-stdlib=libc++",
+			"CMAKE_SHARED_LINKER_FLAGS_INIT": "-stdlib=libc++"
+		}
+	},
+	"clang-libstdc++": {
+		"compilers": {
+			"C": "/usr/bin/clang",
+			"CXX": "/usr/bin/clang++"
+		},
+		"query_driver": "/usr/bin/clang++",
+		"generator": "Ninja",
+		"cmake_usr_args": {
+			"CMAKE_CXX_FLAGS_INIT": "-stdlib=libstdc++",
+			"CMAKE_EXE_LINKER_FLAGS_INIT": "-stdlib=libstdc++",
+			"CMAKE_SHARED_LINKER_FLAGS_INIT": "-stdlib=libstdc++"
 		}
 	}
 }
