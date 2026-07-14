@@ -8,7 +8,7 @@ return {
 				cmake = {
 					cmake_kits_file = "/home/tellegar/.config/nvim/cmake/build_kits.json",
 					-- cmake_build_types_file = vim.fn.expand("~/.config/nvim/cmake/build_types.json"),
-					build_kit = "clang",
+					build_kit = "clang-libc++",
 
 					-- build_dir = tostring(Path:new("{cwd}", "build", "{build_kit}", "{build_type}")),
 					build_dir = tostring(Path:new("{cwd}", "build", "{build_kit}-{build_type}")),
