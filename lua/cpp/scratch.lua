@@ -426,12 +426,18 @@ local function build_items()
 		actions = {
 			{
 				key = "y",
-				desc = "yank",
+				desc = "copy (vim)",
 				fn = function()
-					local cmd = command()
-					vim.fn.setreg('"', cmd)
-					vim.fn.setreg("+", cmd)
-					vim.notify("scratch: yanked cmake command", vim.log.levels.INFO)
+					vim.fn.setreg('"', command())
+					vim.notify("scratch: copied cmake command (vim)", vim.log.levels.INFO)
+				end,
+			},
+			{
+				key = "+",
+				desc = "copy (system)",
+				fn = function()
+					vim.fn.setreg("+", command())
+					vim.notify("scratch: copied cmake command (system)", vim.log.levels.INFO)
 				end,
 			},
 		},
