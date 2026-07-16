@@ -167,7 +167,7 @@ local function remove_config_define(name)
 end
 
 local function choose_preset(name)
-	config = { cmake_preset_name = name, build_dir = nil, generator = nil, defines = {} }
+	config.cmake_preset_name = name
 	config_cmake = presets.resolve(ROOT(), name)
 	M.open()
 end
