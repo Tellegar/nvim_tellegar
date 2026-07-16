@@ -202,6 +202,11 @@ local function command()
 	return "cmake " .. table.concat(command_parts(), " ")
 end
 
+--- The -D argument text for a single cache var, effective value included.
+local function define_arg(name)
+	return "-D" .. name .. "=" .. (select(1, eff_define(name)) or "")
+end
+
 ------------------------------------------------------------------------------
 -- Item spec.
 ------------------------------------------------------------------------------
@@ -398,6 +403,24 @@ local function build_items()
 								h:render()
 							end
 						end)
+					end,
+				},
+				{
+					key = "y",
+					desc = "copy (vim)",
+					hidden = true,
+					fn = function()
+						vim.fn.setreg('"', define_arg(name))
+						vim.notify("scratch: copied -D" .. name .. " (vim)", vim.log.levels.INFO)
+					end,
+				},
+				{
+					key = "+",
+					desc = "copy (system)",
+					hidden = true,
+					fn = function()
+						vim.fn.setreg("+", define_arg(name))
+						vim.notify("scratch: copied -D" .. name .. " (system)", vim.log.levels.INFO)
 					end,
 				},
 			},

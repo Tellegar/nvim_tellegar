@@ -79,7 +79,7 @@
 --   }
 --
 -- An <action> is
--- { key = "<CR>", desc = "build", fn = ..., close = false?, alt_keys = {}? }:
+-- { key = "<CR>", desc = "build", fn = ..., close = false?, alt_keys = {}?, hidden = false? }:
 -- `key` is a normal-mode lhs (<CR>, l, <C-s>); pressing it runs fn(handle). The
 -- action stays open and re-renders unless close = true, which closes the menu
 -- first so follow-up work lands in the origin window. <CR> is the default
@@ -87,6 +87,9 @@
 -- `alt_keys` are extra lhs's that run the same action but stay out of the
 -- footer - aliases for muscle memory (old bindings, mnemonics) without
 -- cluttering the hint bar.
+-- `hidden = true` keeps the action itself (its `key`, not an alias) out of
+-- the footer - still mapped and functional, just not advertised, for
+-- nice-to-have shortcuts that aren't worth cluttering the hint bar over.
 --
 -- Action callbacks receive the menu handle; async callbacks (vim.ui.select)
 -- should call handle:render() to refresh values in place - render() is a
@@ -202,7 +205,9 @@ local function keys_chunks(actions, with_close)
 		chunks[#chunks + 1] = { " " .. desc, "CppMenuHint" }
 	end
 	for _, a in ipairs(actions or {}) do
-		group(a.key, a.desc)
+		if not a.hidden then
+			group(a.key, a.desc)
+		end
 	end
 	if with_close then
 		group("q", "close")
