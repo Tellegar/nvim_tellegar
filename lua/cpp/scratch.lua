@@ -124,20 +124,23 @@ end
 --- since it shells out; false means "queried and failed" vs. nil "not yet".
 local cmake_default_generator_cache
 local function cmake_default_generator()
-	if cmake_default_generator_cache == nil then
-		cmake_default_generator_cache = false
-		local ok, res = pcall(function() return vim.system({ "cmake", "--help" }, { text = true }):wait() end)
-		if ok and res.code == 0 then
-			for line in res.stdout:gmatch("[^\n]+") do
-				local name = line:match("^%*%s*(.-)%s*=")
-				if name then
-					cmake_default_generator_cache = name
-					break
-				end
+	if cmake_default_generator_cache ~= nil then
+		return cmake_default_generator_cache or nil
+	end
+
+	cmake_default_generator_cache = false
+	local ok, res = pcall(function() return vim.system({ "cmake", "--help" }, { text = true }):wait() end)
+	if ok and res.code == 0 then
+		for line in res.stdout:gmatch("[^\n]+") do
+			local name = line:match("^%*%s*(.-)%s*=")
+			if name then
+				cmake_default_generator_cache = name
+				return cmake_default_generator_cache
 			end
 		end
 	end
-	return cmake_default_generator_cache or nil
+
+	return nil
 end
 
 ------------------------------------------------------------------------------
@@ -311,7 +314,7 @@ local function build_items()
 			end
 			local default = cmake_default_generator()
 			if default then
-				return { { default, "Comment" }, { " (default)", "NonText" } }
+				return { { default, "Comment" }, { " (unset)", "NonText" } }
 			end
 			return { { "(unset)", "Comment" } }
 		end,
@@ -323,17 +326,11 @@ local function build_items()
 				alt_keys = { "l", "<Right>", "i", "I", "a", "A" },
 				fn = function(h)
 					local choices = { "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
-					local default = cmake_default_generator()
-					local default_choice = default and ("(default: " .. default .. ")")
-					if default_choice then
-						table.insert(choices, 1, default_choice)
-					end
 					vim.ui.select(choices, { prompt = "generator" }, function(choice)
 						if not choice then
 							return
 						end
-						-- picking the default entry clears the override so cmake resolves it itself
-						config.generator = (choice ~= default_choice) and choice or nil
+						config.generator = choice
 						h:render()
 					end)
 				end,
