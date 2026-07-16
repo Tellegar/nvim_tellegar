@@ -43,12 +43,21 @@
 --     title    = "Menu",           - window title
 --     min_width = 44,              - lower bound on the window width (optional)
 --     on_close = function() end,   - called once when the menu closes (optional)
---     note     = function() return {{text, hl}, ...} end,
+--     note     = "text" | function() return {{text, hl}, ...} end,
 --                                  - left half of the global footer line
+--     select_key = "d",           - preselect the item whose `key` matches
+--                                    this, instead of the first selectable
+--                                    item (optional; falls back silently if
+--                                    no item has that key) - for callers that
+--                                    rebuild the whole spec (M.open() again)
+--                                    and want the selection to stick to a
+--                                    known entry rather than reset to the top
 --     actions  = { <action>, ... },  - menu-global actions; fire from any entry
 --                                      and shadow a per-item action of same key
 --     items    = {
---       { section = "build" },     - group header line
+--       { section = "build" },     - group header line, gap above + rule
+--       { subsection = "flags" },  - lighter-weight header: no gap above, no
+--                                    rule, for subdividing within a section
 --       {
 --         key      = "b",          - quick-launch key, shown as a left column;
 --                                    pressing it anywhere selects this entry and
@@ -171,7 +180,14 @@ local FOOTER_GAP = 3 -- minimum space between the note and the keybinds
 
 --- A source's (item or spec) note as chunks, or empty.
 local function note_chunks(source)
-	return source and source.note and resolve(source.note) or {}
+	if not (source and source.note) then
+		return {}
+	end
+	local v = resolve(source.note)
+	if type(v) == "string" then
+		return { { v, "CppMenuHint" } }
+	end
+	return v
 end
 
 --- Right-hand keybind chunks: one `key desc` pair per action, close appended
@@ -248,6 +264,8 @@ function Menu:_build()
 	for i, it in ipairs(items) do
 		if it.section then
 			width = math.max(width, dw(it.section) + 12)
+		elseif it.subsection then
+			width = math.max(width, dw(it.subsection) + 4)
 		else
 			lefts[i] = "  " .. (it.key or " ") .. "  " .. resolve(it.label)
 			values[i] = value_chunks(it)
@@ -265,7 +283,7 @@ function Menu:_build()
 	end
 	width = math.max(width, footer_width(note_chunks(self.spec), keys_chunks(self.spec.actions, true)))
 
-	local lines, spans, row_item, item_row = {}, {}, {}, {}
+	local lines, spans, row_item, item_row, item_rows = {}, {}, {}, {}, {}
 	local function push(chunks)
 		local row, text = #lines, ""
 		for _, c in ipairs(chunks) do
@@ -286,6 +304,8 @@ function Menu:_build()
 			end
 			local rule = string.rep("─", math.max(0, width - 5 - dw(it.section)))
 			push({ { "  " }, { it.section, "CppMenuSection" }, { " " }, { rule, "CppMenuRule" } })
+		elseif it.subsection then
+			push({ { "  " }, { it.subsection, "CppMenuSection" } })
 		else
 			local chunks = {
 				{ "  " },
@@ -300,11 +320,14 @@ function Menu:_build()
 			end
 			local row = push(chunks)
 			row_item[row], item_row[i] = i, row
+			item_rows[i] = { row }
 			for _, ln_chunks in ipairs(extras[i] or {}) do
 				-- continuation rows: same item for selection/click, but
 				-- item_row keeps pointing at the label row above (cursor
 				-- always lands there, not mid-block).
-				row_item[push(ln_chunks)] = i
+				local ln_row = push(ln_chunks)
+				row_item[ln_row] = i
+				item_rows[i][#item_rows[i] + 1] = ln_row
 			end
 		end
 	end
@@ -318,6 +341,7 @@ function Menu:_build()
 		spans = spans,
 		row_item = row_item,
 		item_row = item_row,
+		item_rows = item_rows,
 		width = width,
 		item_hint_row = item_hint_row,
 		global_hint_row = global_hint_row,
@@ -341,6 +365,14 @@ function Menu:_set_sel(i)
 	end
 
 	api.nvim_buf_clear_namespace(self.buf, ns_sel, 0, -1)
+	-- Highlight every row of the entry (label + any `lines` continuations),
+	-- not just the one the real cursor sits on: 'cursorline' only ever lights
+	-- up a single row, so the block is painted manually via extmarks instead.
+	for _, r in ipairs(layout.item_rows[i] or {}) do
+		api.nvim_buf_set_extmark(self.buf, ns_sel, r - 1, 0, {
+			line_hl_group = "CppMenuSelected",
+		})
+	end
 	if row then
 		api.nvim_buf_set_extmark(self.buf, ns_sel, row - 1, 0, {
 			virt_text = { { "▌", "CppMenuIndicator" } },
@@ -465,7 +497,11 @@ function Menu:close()
 	self.closed = true
 	self:_restore_cursor()
 	pcall(api.nvim_del_augroup_by_id, self.augroup)
-	if api.nvim_win_is_valid(self.win) then
+	-- self.win may still be unset if this handle never finished M.open() (an
+	-- error partway through construction, e.g. a bad spec field, leaves
+	-- `current` pointing at a half-built menu) - closing it must still be a
+	-- safe no-op so the next M.open() doesn't crash trying to clean it up.
+	if self.win and api.nvim_win_is_valid(self.win) then
 		api.nvim_win_close(self.win, true)
 	end
 	if current == self then
@@ -486,12 +522,16 @@ function M.open(spec)
 
 	local self = setmetatable({ spec = spec, sel = 1 }, Menu)
 	current = self
+	local first_selectable, matched
 	for i, it in ipairs(spec.items) do
 		if selectable(it) then
-			self.sel = i
-			break
+			first_selectable = first_selectable or i
+			if spec.select_key and it.key == spec.select_key then
+				matched = i
+			end
 		end
 	end
+	self.sel = matched or first_selectable or 1
 
 	self.buf = api.nvim_create_buf(false, true)
 	vim.bo[self.buf].buftype = "nofile"
@@ -517,9 +557,7 @@ function M.open(spec)
 		"NormalFloat:CppMenuNormal",
 		"FloatBorder:CppMenuBorder",
 		"FloatTitle:CppMenuTitle",
-		"CursorLine:CppMenuSelected",
 	}, ",")
-	vim.wo[self.win].cursorline = true
 	vim.wo[self.win].wrap = false
 	vim.wo[self.win].scrolloff = 2
 

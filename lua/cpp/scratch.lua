@@ -340,7 +340,7 @@ local function build_items()
 
 	-- -D cache vars: one row per union name (value/source computed live), then
 	-- an add row. Each row: <CR> edit value, <C-CR> edit name, x remove.
-	table.insert(items, { section = "-Defines" })
+	table.insert(items, { subsection = "-Defines" })
 	for _, name in ipairs(union_define_names()) do
 		table.insert(items, {
 			label = function() return name end,
@@ -413,7 +413,7 @@ local function build_items()
 							return
 						end
 						set_config_define(n, val)
-						M.open()
+						M.open("D")
 					end)
 				end,
 			},
@@ -459,11 +459,12 @@ local function build_items()
 	return items
 end
 
-function M.open()
+function M.open(select_key)
 	return require("cpp.menu").open({
 		title = " config scratch ",
 		min_width = 54,
 		items = build_items(),
+		select_key = select_key,
 	})
 end
 
