@@ -24,6 +24,10 @@
 -- which also owns cwd-syncing for neovim-tasks and the :Cpp menu.
 require("cpp").setup()
 
+-- scratch prototype surface for the :Cpp config section (:CppScratch).
+-- throwaway - remove once the config-section layout is settled.
+require("cpp.scratch")
+
 -- vim.lsp.config("qmlls", {
 -- 	cmd = {"qmlls", "-E"}
 -- })
