@@ -179,19 +179,24 @@ end
 -- The cmake configure command implied by the RAW config.
 ------------------------------------------------------------------------------
 
-local function command()
-	local parts = { "cmake" }
+--- Ordered argument list (without the leading "cmake"), one entry per line
+--- in the preview. -B always comes first since build_dir is always present.
+local function command_parts()
+	local parts = { "-B build/" .. (select(1, build_dir_eff())) }
 	if config.cmake_preset_name then
 		parts[#parts + 1] = "--preset " .. config.cmake_preset_name
 	end
-	parts[#parts + 1] = "-B build/" .. (select(1, build_dir_eff()))
 	if config.generator then
 		parts[#parts + 1] = "-G " .. vim.fn.shellescape(config.generator)
 	end
 	for _, d in ipairs(config.defines) do
 		parts[#parts + 1] = "-D" .. d.name .. "=" .. d.value
 	end
-	return table.concat(parts, " ")
+	return parts
+end
+
+local function command()
+	return "cmake " .. table.concat(command_parts(), " ")
 end
 
 ------------------------------------------------------------------------------
@@ -418,13 +423,22 @@ local function build_items()
 		},
 	})
 
-	-- Command preview (built from the raw config), full and untruncated so it
-	-- can be inspected; selectable (actions, not a section) so it can be
-	-- navigated to and yanked with `y`.
+	-- Command preview (built from the raw config), one argument (or -B/-G
+	-- pair) per line so it doesn't grow into one huge line - but it's still a
+	-- single selectable entry (menu.lua's `lines`), yanking the full command
+	-- with `y`/`+` regardless of which row it's viewed/clicked on.
 	table.insert(items, { label = "" })
+	-- -B is always present, so the first line always reads "cmake -B ...".
 	table.insert(items, {
-		label = function() return command() end,
+		label = function() return "cmake " .. command_parts()[1] end,
 		label_hl = "Comment",
+		lines = function()
+			local out = {}
+			for i = 2, #command_parts() do
+				out[#out + 1] = command_parts()[i]
+			end
+			return out
+		end,
 		actions = {
 			{
 				key = "y",

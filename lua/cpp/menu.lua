@@ -59,6 +59,12 @@
 --         note     = function() return {{text, hl}, ...} end,
 --                                  - left half of the footer line while selected
 --         actions  = { <action>, ... },  - ordered; per-entry
+--         lines    = function() return { "text" | {{text, hl}, ...}, ... } end,
+--                                  - extra full-width rows rendered below the
+--                                    label row, still part of THIS entry: they
+--                                    select/highlight/click as one unit (the
+--                                    cursor snaps back to the label row), for
+--                                    entries whose content doesn't fit one line
 --       },
 --     },
 --   }
@@ -223,13 +229,21 @@ local function selectable(item)
 end
 
 
+--- Normalizes one `lines` entry to a chunk list.
+local function extra_line_chunks(ln, label_hl)
+	if type(ln) == "string" then
+		return { { "     " }, { ln, label_hl or "CppMenuLabel" } }
+	end
+	return ln
+end
+
 --- Lays the spec out into buffer lines + highlight spans. Width is computed
 --- over every item line *and* both footer lines, so nothing ever wraps or
 --- truncates as the selection moves.
 function Menu:_build()
 	local items = self.spec.items
 
-	local lefts, values = {}, {}
+	local lefts, values, extras = {}, {}, {}
 	local width = math.max(self.spec.min_width or 44, dw(self.spec.title or "") + 8)
 	for i, it in ipairs(items) do
 		if it.section then
@@ -239,6 +253,14 @@ function Menu:_build()
 			values[i] = value_chunks(it)
 			local w = dw(lefts[i]) + (values[i] and (3 + chunks_width(values[i])) or 0)
 			width = math.max(width, w + 2, footer_width(note_chunks(it), keys_chunks(it.actions, false)))
+			if it.lines then
+				extras[i] = {}
+				for _, ln in ipairs(resolve(it.lines)) do
+					local chunks = extra_line_chunks(ln, resolve(it.label_hl))
+					extras[i][#extras[i] + 1] = chunks
+					width = math.max(width, chunks_width(chunks) + 2)
+				end
+			end
 		end
 	end
 	width = math.max(width, footer_width(note_chunks(self.spec), keys_chunks(self.spec.actions, true)))
@@ -278,6 +300,12 @@ function Menu:_build()
 			end
 			local row = push(chunks)
 			row_item[row], item_row[i] = i, row
+			for _, ln_chunks in ipairs(extras[i] or {}) do
+				-- continuation rows: same item for selection/click, but
+				-- item_row keeps pointing at the label row above (cursor
+				-- always lands there, not mid-block).
+				row_item[push(ln_chunks)] = i
+			end
 		end
 	end
 	push({ { "" } })
