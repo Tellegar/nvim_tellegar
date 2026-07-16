@@ -416,18 +416,25 @@ local function build_items()
 		},
 	})
 
-	-- Command preview (built from the raw config). Single row, truncated so a
-	-- long command can't blow out the menu width; live via the function label.
-	table.insert(items, { section = "cmake configure" })
+	-- Command preview (built from the raw config), full and untruncated so it
+	-- can be inspected; selectable (actions, not a section) so it can be
+	-- navigated to and yanked with `y`.
+	table.insert(items, { label = "" })
 	table.insert(items, {
-		label = function()
-			local cmd = command()
-			if vim.fn.strdisplaywidth(cmd) > 46 then
-				cmd = vim.fn.strcharpart(cmd, 0, 45) .. "…"
-			end
-			return cmd
-		end,
+		label = function() return command() end,
 		label_hl = "Comment",
+		actions = {
+			{
+				key = "y",
+				desc = "yank",
+				fn = function()
+					local cmd = command()
+					vim.fn.setreg('"', cmd)
+					vim.fn.setreg("+", cmd)
+					vim.notify("scratch: yanked cmake command", vim.log.levels.INFO)
+				end,
+			},
+		},
 	})
 
 	return items
