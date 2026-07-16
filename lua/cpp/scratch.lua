@@ -13,13 +13,15 @@
 --   resolves the preset itself; build_dir is always present (explicit, preset,
 --   or generated).
 --
--- Points at /tmp/t (our example project) so presets are real.
+-- Points at the current working directory so presets are real.
 -- Plain unicode only, same as cpp.menu (no nerd-font glyphs).
 
 local M = {}
 local presets = require("cpp.cmake_presets")
 
-local ROOT = "/tmp/t"
+local function ROOT()
+	return vim.fn.getcwd()
+end
 
 -- Explicit config: only what the user set. Empty by default.
 local config = {
@@ -163,7 +165,7 @@ end
 
 local function choose_preset(name)
 	config = { cmake_preset_name = name, build_dir = nil, generator = nil, defines = {} }
-	config_cmake = presets.resolve(ROOT, name)
+	config_cmake = presets.resolve(ROOT(), name)
 	M.open()
 end
 
@@ -199,7 +201,7 @@ end
 local function build_items()
 	local items = { { section = "config" } }
 
-	if presets.available(ROOT) then
+	if presets.available(ROOT()) then
 		table.insert(items, {
 			key = "p",
 			label = "CMake preset",
@@ -212,7 +214,7 @@ local function build_items()
 					desc = "select",
 					alt_keys = { "l", "<Right>", "i", "I", "a", "A" },
 					fn = function()
-						local list = presets.list(ROOT)
+						local list = presets.list(ROOT())
 						vim.ui.select(list, {
 							prompt = "cmake configure preset",
 							format_item = function(it) return it.display end,
