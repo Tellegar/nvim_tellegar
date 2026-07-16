@@ -1,29 +1,78 @@
--- Floating "button list" menu for :Cpp - rendering and interaction only.
--- cpp.lua describes entries (label / value / actions); this module owns the
--- window, layout, movement, quick-launch keys and the hint bar, so the two
--- concerns can evolve independently.
+-- A floating "button list" menu, driven entirely by data. The caller passes a
+-- spec of entries; this module owns the window, layout, movement, the hint bar
+-- and all key handling, so presentation and content evolve independently.
 --
--- Deliberately no nerd-font glyphs anywhere: only unicode that every
--- monospace font ships (─ ▌ ● ↵ →), since the terminal font here doesn't
--- render private-use-area icons.
+-- Features:
+--   - vertically stacked entries grouped under section headers, each entry a
+--     label with an optional right-aligned value and a left quick-launch key;
+--   - live fields: any text field may be a function, re-resolved on every
+--     render so displayed values track external state;
+--   - a two-line footer, each line justified with a note flush-left and its
+--     keybinds flush-right: line 1 tracks the selected entry (its note +
+--     actions), line 2 is menu-global (spec.note + spec.actions + close);
+--   - a data-defined keymap - keys come from the actions in the spec, not a
+--     fixed set - with j/k movement that skips section headers;
+--   - a single floating window that auto-sizes to its widest line (entry or
+--     footer) and recenters on the editor when live values change its width.
 --
--- Item spec (text fields accept either a value or a function returning one,
--- so re-renders pick up live state):
---   { section = "build" }                        - group header line
+-- Deliberately no nerd-font glyphs anywhere: only unicode that every monospace
+-- font ships (─ ▌ ● ↵ →), for terminals that don't render private-use icons.
+--
+-- Usage:
+--   local menu = require("cpp.menu")
+--   local handle = menu.open(spec)   -- see the spec shape below
+--   -- later, from an action callback or elsewhere:
+--   handle:render()                  -- refresh values in place
+--   handle:close()                   -- dismiss the menu
+--
+-- API:
+--   M.open(spec) -> handle
+--       Opens the menu (closing any menu already open - only one exists at a
+--       time) and returns a handle. Focus moves into the floating window.
+--   handle:render()
+--       Re-resolves every live field, repaints, and resizes/recenters the
+--       window if widths changed. Call it after an action mutates displayed
+--       state. Safe to call after the menu closed - it's then a no-op, so
+--       stale async callbacks are harmless.
+--   handle:close()
+--       Dismisses the menu, restores the cursor and focus, and runs
+--       spec.on_close. Also bound to q / <Esc> inside the menu.
+--
+-- The spec (all text fields accept a value or a function returning one):
 --   {
---     key      = "b",              - quick-launch key, shown as a left column;
---                                    pressing it anywhere triggers `primary`
---     label    = "Build",
---     value    = "no target" | {{text, hl}, ...},  - right-aligned
---     value_hl = "String",         - hl for plain-string values
+--     title    = "Menu",           - window title
+--     min_width = 44,              - lower bound on the window width (optional)
+--     on_close = function() end,   - called once when the menu closes (optional)
 --     note     = function() return {{text, hl}, ...} end,
---                                  - status chunks prefixed to the hint bar
---     primary  = { desc = "build", fn = ..., close = false? },
---                                  - <CR> / quick key; closes the menu first
---                                    unless close = false
---     expand   = { desc = "pick target", fn = ... },  - l / <Right>, stays open
---     save     = { desc = "save", fn = ... },         - <C-s>, stays open
+--                                  - left half of the global footer line
+--     actions  = { <action>, ... },  - menu-global actions; fire from any entry
+--                                      and shadow a per-item action of same key
+--     items    = {
+--       { section = "build" },     - group header line
+--       {
+--         key      = "b",          - quick-launch key, shown as a left column;
+--                                    pressing it anywhere selects this entry and
+--                                    runs its <CR> action
+--         label    = "Build",
+--         value    = "no target" | {{text, hl}, ...},  - right-aligned
+--         value_hl = "String",     - hl for plain-string values
+--         note     = function() return {{text, hl}, ...} end,
+--                                  - left half of the footer line while selected
+--         actions  = { <action>, ... },  - ordered; per-entry
+--       },
+--     },
 --   }
+--
+-- An <action> is
+-- { key = "<CR>", desc = "build", fn = ..., close = false?, alt_keys = {}? }:
+-- `key` is a normal-mode lhs (<CR>, l, <C-s>); pressing it runs fn(handle). The
+-- action stays open and re-renders unless close = true, which closes the menu
+-- first so follow-up work lands in the origin window. <CR> is the default
+-- action - the quick-launch keys trigger it. q / <Esc> always close.
+-- `alt_keys` are extra lhs's that run the same action but stay out of the
+-- footer - aliases for muscle memory (old bindings, mnemonics) without
+-- cluttering the hint bar.
+--
 -- Action callbacks receive the menu handle; async callbacks (vim.ui.select)
 -- should call handle:render() to refresh values in place - render() is a
 -- no-op once the menu is closed, so stale callbacks are harmless.
@@ -78,6 +127,24 @@ local function chunks_width(chunks)
 	return w
 end
 
+-- Pretty forms for action keys in the hint bar; anything else shows verbatim,
+-- with <C-x> collapsed to ^x.
+local KEY_SYMBOLS = {
+	["<CR>"] = "↵",
+	["<Right>"] = "→",
+	["<Left>"] = "←",
+}
+local function key_symbol(key)
+	if KEY_SYMBOLS[key] then
+		return KEY_SYMBOLS[key]
+	end
+	local ctrl = key:match("^<C%-(.+)>$")
+	if ctrl then
+		return "^" .. (KEY_SYMBOLS["<" .. ctrl .. ">"] or ctrl)
+	end
+	return key
+end
+
 --- Normalizes an item's `value` to a chunk list ({{text, hl}, ...}) or nil.
 local function value_chunks(item)
 	local v = resolve(item.value)
@@ -90,37 +157,59 @@ local function value_chunks(item)
 	return v
 end
 
---- Hint-bar chunks for an item: its note, then one `key action` pair per
---- available action, then the ever-present close hint.
-local function hint_chunks(item)
+-- Footer: two justified lines, each a note flush-left and its keybinds
+-- flush-right with filler between. Line 1 is the selected item's (note +
+-- actions); line 2 is the menu-global one (spec.note + spec.actions + close).
+local FOOTER_INSET = 1 -- blank columns kept on each side, off the border
+local FOOTER_GAP = 3 -- minimum space between the note and the keybinds
+
+--- A source's (item or spec) note as chunks, or empty.
+local function note_chunks(source)
+	return source and source.note and resolve(source.note) or {}
+end
+
+--- Right-hand keybind chunks: one `key desc` pair per action, close appended
+--- when asked (the global line).
+local function keys_chunks(actions, with_close)
 	local chunks = {}
-	local function push(text, hl)
-		chunks[#chunks + 1] = { text, hl }
-	end
-	local function gap()
+	local function group(key, desc)
 		if #chunks > 0 then
-			push("   ")
+			chunks[#chunks + 1] = { "  " }
 		end
+		chunks[#chunks + 1] = { key_symbol(key), "CppMenuHintKey" }
+		chunks[#chunks + 1] = { " " .. desc, "CppMenuHint" }
 	end
-	if item and item.note then
-		vim.list_extend(chunks, resolve(item.note))
+	for _, a in ipairs(actions or {}) do
+		group(a.key, a.desc)
 	end
-	local function action(sym, a)
-		if a then
-			gap()
-			push(sym, "CppMenuHintKey")
-			push(" " .. a.desc, "CppMenuHint")
-		end
+	if with_close then
+		group("q", "close")
 	end
-	if item then
-		action("↵", item.primary)
-		action("→", item.expand)
-		action("^s", item.save)
-	end
-	gap()
-	push("q", "CppMenuHintKey")
-	push(" close", "CppMenuHint")
 	return chunks
+end
+
+--- Minimum window width a footer line with these two halves needs.
+local function footer_width(note, keys)
+	return 2 * FOOTER_INSET + FOOTER_GAP + chunks_width(note) + chunks_width(keys)
+end
+
+--- One justified footer line: inset, note, filler, keys - so the keys land at
+--- the right edge (also inset). Width is sized in _build so it never underflows.
+local function footer_line(note, keys, width)
+	local fill = math.max(FOOTER_GAP, width - 2 * FOOTER_INSET - chunks_width(note) - chunks_width(keys))
+	local out = { { string.rep(" ", FOOTER_INSET) } }
+	vim.list_extend(out, note)
+	out[#out + 1] = { string.rep(" ", fill) }
+	vim.list_extend(out, keys)
+	return out
+end
+
+--- Line 1 (selected item) and line 2 (menu-global) of the footer.
+local function item_footer(item, width)
+	return footer_line(note_chunks(item), keys_chunks(item and item.actions, false), width)
+end
+local function global_footer(spec, width)
+	return footer_line(note_chunks(spec), keys_chunks(spec.actions, true), width)
 end
 
 local Menu = {}
@@ -130,20 +219,13 @@ Menu.__index = Menu
 local current
 
 local function selectable(item)
-	return item and not item.section and (item.primary or item.expand or item.save) ~= nil
+	return item and not item.section and item.actions ~= nil and #item.actions > 0
 end
 
-function Menu:_hint_line(width)
-	local chunks = hint_chunks(self.spec.items[self.sel])
-	local pad = math.max(1, math.floor((width - chunks_width(chunks)) / 2))
-	local out = { { string.rep(" ", pad) } }
-	vim.list_extend(out, chunks)
-	return out
-end
 
 --- Lays the spec out into buffer lines + highlight spans. Width is computed
---- over every item line *and* every item's hint bar, so neither ever wraps
---- or truncates as the selection moves.
+--- over every item line *and* both footer lines, so nothing ever wraps or
+--- truncates as the selection moves.
 function Menu:_build()
 	local items = self.spec.items
 
@@ -156,10 +238,10 @@ function Menu:_build()
 			lefts[i] = "  " .. (it.key or " ") .. "  " .. resolve(it.label)
 			values[i] = value_chunks(it)
 			local w = dw(lefts[i]) + (values[i] and (3 + chunks_width(values[i])) or 0)
-			width = math.max(width, w + 2, chunks_width(hint_chunks(it)) + 4)
+			width = math.max(width, w + 2, footer_width(note_chunks(it), keys_chunks(it.actions, false)))
 		end
 	end
-	width = math.max(width, chunks_width(hint_chunks(nil)) + 4)
+	width = math.max(width, footer_width(note_chunks(self.spec), keys_chunks(self.spec.actions, true)))
 
 	local lines, spans, row_item, item_row = {}, {}, {}, {}
 	local function push(chunks)
@@ -177,7 +259,9 @@ function Menu:_build()
 	push({ { "" } })
 	for i, it in ipairs(items) do
 		if it.section then
-			push({ { "" } })
+			if #lines > 1 then -- separator gap, unless right after the top padding
+				push({ { "" } })
+			end
 			local rule = string.rep("─", math.max(0, width - 5 - dw(it.section)))
 			push({ { "  " }, { it.section, "CppMenuSection" }, { " " }, { rule, "CppMenuRule" } })
 		else
@@ -198,7 +282,8 @@ function Menu:_build()
 	end
 	push({ { "" } })
 	push({ { " " }, { string.rep("─", width - 2), "CppMenuRule" } })
-	local hint_row = push(self:_hint_line(width))
+	local item_hint_row = push(item_footer(items[self.sel], width))
+	local global_hint_row = push(global_footer(self.spec, width))
 
 	return {
 		lines = lines,
@@ -206,11 +291,13 @@ function Menu:_build()
 		row_item = row_item,
 		item_row = item_row,
 		width = width,
-		hint_row = hint_row,
+		item_hint_row = item_hint_row,
+		global_hint_row = global_hint_row,
 	}
 end
 
---- Moves the selection: cursorline, the ▌ indicator, and the hint bar.
+--- Moves the selection: cursorline, the ▌ indicator, and the contextual
+--- (line 1) footer.
 function Menu:_set_sel(i)
 	if self.closed then
 		return
@@ -233,8 +320,9 @@ function Menu:_set_sel(i)
 		})
 	end
 
-	-- Rewrite the hint bar for the newly selected item.
-	local chunks = self:_hint_line(layout.width)
+	-- Rewrite the contextual footer line for the newly selected item; the
+	-- global line below it doesn't depend on the selection, so it stays put.
+	local chunks = item_footer(self.spec.items[self.sel], layout.width)
 	local text, spans = "", {}
 	for _, c in ipairs(chunks) do
 		if c[2] then
@@ -243,11 +331,11 @@ function Menu:_set_sel(i)
 		text = text .. c[1]
 	end
 	vim.bo[self.buf].modifiable = true
-	api.nvim_buf_set_lines(self.buf, layout.hint_row - 1, layout.hint_row, false, { text })
+	api.nvim_buf_set_lines(self.buf, layout.item_hint_row - 1, layout.item_hint_row, false, { text })
 	vim.bo[self.buf].modifiable = false
-	api.nvim_buf_clear_namespace(self.buf, ns, layout.hint_row - 1, layout.hint_row)
+	api.nvim_buf_clear_namespace(self.buf, ns, layout.item_hint_row - 1, layout.item_hint_row)
 	for _, s in ipairs(spans) do
-		api.nvim_buf_set_extmark(self.buf, ns, layout.hint_row - 1, s[1], {
+		api.nvim_buf_set_extmark(self.buf, ns, layout.item_hint_row - 1, s[1], {
 			end_col = s[2],
 			hl_group = s[3],
 		})
@@ -308,17 +396,13 @@ function Menu:_edge(last)
 	end
 end
 
---- Runs one of an item's actions. Primary actions close the menu first (so
---- tasks land in the origin window) unless the action opts out.
-function Menu:_run(action, default_close)
+--- Runs an action. Actions with close = true close the menu first (so tasks
+--- land in the origin window); the rest stay open and re-render in place.
+function Menu:_run(action)
 	if not action then
 		return
 	end
-	local close = action.close
-	if close == nil then
-		close = default_close
-	end
-	if close then
+	if action.close then
 		self:close()
 		action.fn(self)
 	else
@@ -364,7 +448,7 @@ function Menu:close()
 	end
 end
 
----@param spec { title: string, items: table[], min_width: integer?, on_close: fun()? }
+---@param spec { title: string, items: table[], actions: table[]?, note: (fun(): table[])|table[]|nil, min_width: integer?, on_close: fun()? }
 ---@return table handle  with :close() and :render()
 function M.open(spec)
 	ensure_hl()
@@ -409,7 +493,7 @@ function M.open(spec)
 	}, ",")
 	vim.wo[self.win].cursorline = true
 	vim.wo[self.win].wrap = false
-	vim.wo[self.win].scrolloff = 0
+	vim.wo[self.win].scrolloff = 2
 
 	self:render()
 
@@ -425,20 +509,64 @@ function M.open(spec)
 	map("<S-Tab>", function() self:_move(-1) end)
 	map("gg", function() self:_edge(false) end)
 	map("G", function() self:_edge(true) end)
-	map("<CR>", function() self:_run(spec.items[self.sel].primary, true) end)
-	map("l", function() self:_run(spec.items[self.sel].expand, false) end)
-	map("<Right>", function() self:_run(spec.items[self.sel].expand, false) end)
-	map("<C-s>", function() self:_run(spec.items[self.sel].save, false) end)
 	map("q", function() self:close() end)
 	map("<Esc>", function() self:close() end)
 	for _, lhs in ipairs({ "i", "I", "a", "A", "o", "O" }) do
 		map(lhs, function() end)
 	end
+
+	-- Actions dispatch through one map per distinct key: a menu-global action
+	-- (spec.actions) wins, else the selected item's action bound to that key.
+	-- alt_keys are extra aliases for the same action, mapped like any other
+	-- key but left out of the footer (keys_chunks only reads a.key).
+	local function action_keys(a)
+		return a.alt_keys and vim.list_extend({ a.key }, a.alt_keys) or { a.key }
+	end
+	local global_by_key = {}
+	for _, a in ipairs(spec.actions or {}) do
+		for _, k in ipairs(action_keys(a)) do
+			global_by_key[k] = a
+		end
+	end
+	local function item_action(it, key)
+		for _, a in ipairs(it and it.actions or {}) do
+			for _, k in ipairs(action_keys(a)) do
+				if k == key then
+					return a
+				end
+			end
+		end
+	end
+	local function dispatch(key)
+		self:_run(global_by_key[key] or item_action(spec.items[self.sel], key))
+	end
+	local keys = {}
+	for _, a in ipairs(spec.actions or {}) do
+		for _, k in ipairs(action_keys(a)) do
+			keys[k] = true
+		end
+	end
+	for _, it in ipairs(spec.items) do
+		for _, a in ipairs(it.actions or {}) do
+			for _, k in ipairs(action_keys(a)) do
+				keys[k] = true
+			end
+		end
+	end
+	for key in pairs(keys) do
+		map(key, function() dispatch(key) end)
+	end
+	-- <Right> mirrors an `l` action, matching the old expand binding.
+	if keys["l"] then
+		map("<Right>", function() dispatch("l") end)
+	end
+
+	-- Quick-launch: an item's `key` selects it and runs its <CR> action.
 	for i, it in ipairs(spec.items) do
-		if it.key and it.primary then
+		if it.key and item_action(it, "<CR>") then
 			map(it.key, function()
 				self:_set_sel(i)
-				self:_run(it.primary, true)
+				dispatch("<CR>")
 			end)
 		end
 	end
@@ -493,3 +621,5 @@ function M.open(spec)
 end
 
 return M
+-- TODO explore editable fields
+-- TODO more concrete action keymaps

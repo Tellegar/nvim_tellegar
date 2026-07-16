@@ -11,8 +11,9 @@
 -- detected root via vim.lsp.start(), so that side is exact rather than
 -- cwd-tracking.
 --
--- Everything here is gated on filetype: buffers that aren't c/cpp/objc/
--- objcpp/cuda never trigger any of this (no lcd, no clangd client, no menu).
+-- The automatic side (lcd, clangd client) is gated on filetype: buffers that
+-- aren't c/cpp/objc/objcpp/cuda never trigger it. `:Cpp` itself is not gated -
+-- it can be opened from any buffer and falls back to marker-sniffing from cwd.
 
 local M = {}
 
@@ -264,6 +265,19 @@ local function display_path(root)
 	return path
 end
 
+--- The menu's global footer note: whether the current root is saved, guessed
+--- (session/marker-only), or unset. Shown regardless of which entry is selected.
+local function root_note(root)
+	local status = root_status(root)
+	local hl = status == "saved" and "DiagnosticOk"
+		or status == "guessed" and "DiagnosticWarn"
+		or "Comment"
+	local text = status == "saved" and "saved"
+		or status == "guessed" and "guessed, not saved"
+		or "no root set"
+	return { { "● ", hl }, { text, "CppMenuHint" } }
+end
+
 --- vim.ui.select over a cmake param's choices, persisting the pick. `handle`
 --- (a live menu handle, or nil if the menu already closed) refreshes the
 --- menu's value column in place.
@@ -357,15 +371,10 @@ local function build_items(root, bufnr, origin_win)
 				end
 				return { { display_path(root), "CppMenuValue" }, { " ●", status_hl() } }
 			end,
-			note = function()
-				local status = root_status(root)
-				local text = status == "saved" and "saved"
-					or status == "guessed" and "guessed, not saved"
-					or "no root set"
-				return { { "● ", status_hl() }, { text, "CppMenuHint" } }
-			end,
-			primary = { desc = "change", fn = function() pick_manual_root(bufnr, origin_win) end },
-			save = { desc = "save", fn = function() save_current_root(bufnr) end },
+			actions = {
+				{ key = "<CR>", desc = "change", close = true, fn = function() pick_manual_root(bufnr, origin_win) end },
+				{ key = "<C-s>", desc = "save", fn = function() save_current_root(bufnr) end },
+			},
 		},
 	}
 	if not root then
@@ -378,45 +387,59 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "c",
 			label = "Configure",
-			primary = { desc = "configure", fn = function() M.run_task(origin_win, "start cmake configure") end },
+			actions = {
+				{ key = "<CR>", desc = "configure", close = true, fn = function() M.run_task(origin_win, "start cmake configure") end },
+			},
 		},
 		{
 			key = "b",
 			label = "Build",
 			value = function() return cfg.cmake.target or "no target" end,
 			value_hl = function() return cfg.cmake.target and "String" or "Comment" end,
-			primary = {
-				desc = "build",
-				fn = function()
-					if not cfg.cmake.target then
-						pick_param(root, "target", nil, function() M.run_task(origin_win, "start cmake build") end)
-					else
-						M.run_task(origin_win, "start cmake build")
-					end
-				end,
+			actions = {
+				{
+					key = "<CR>",
+					desc = "build",
+					close = true,
+					fn = function()
+						if not cfg.cmake.target then
+							pick_param(root, "target", nil, function() M.run_task(origin_win, "start cmake build") end)
+						else
+							M.run_task(origin_win, "start cmake build")
+						end
+					end,
+				},
+				{ key = "l", desc = "pick target", fn = function(handle) pick_param(root, "target", handle) end },
 			},
-			expand = { desc = "pick target", fn = function(handle) pick_param(root, "target", handle) end },
 		},
 		{
 			key = "B",
 			label = "Rebuild",
 			value = "clean + build",
-			primary = { desc = "rebuild", fn = function() M.run_task(origin_win, "start cmake rebuild") end },
+			actions = {
+				{ key = "<CR>", desc = "rebuild", close = true, fn = function() M.run_task(origin_win, "start cmake rebuild") end },
+			},
 		},
 		{
 			key = "r",
 			label = "Run",
-			primary = { desc = "run", fn = function() M.run_task(origin_win, "start cmake run") end },
+			actions = {
+				{ key = "<CR>", desc = "run", close = true, fn = function() M.run_task(origin_win, "start cmake run") end },
+			},
 		},
 		{
 			key = "d",
 			label = "Debug",
-			primary = { desc = "debug", fn = function() M.run_task(origin_win, "start cmake debug") end },
+			actions = {
+				{ key = "<CR>", desc = "debug", close = true, fn = function() M.run_task(origin_win, "start cmake debug") end },
+			},
 		},
 		{
 			key = "x",
 			label = "Cancel task",
-			primary = { desc = "cancel", fn = function() vim.cmd("Task cancel") end },
+			actions = {
+				{ key = "<CR>", desc = "cancel", close = true, fn = function() vim.cmd("Task cancel") end },
+			},
 		},
 		{ section = "config" },
 		{
@@ -424,10 +447,8 @@ local function build_items(root, bufnr, origin_win)
 			label = "Build kit",
 			value = function() return cfg.cmake.build_kit end,
 			value_hl = "String",
-			primary = {
-				desc = "select kit",
-				close = false,
-				fn = function(handle) pick_param(root, "build_kit", handle) end,
+			actions = {
+				{ key = "<CR>", desc = "select kit", fn = function(handle) pick_param(root, "build_kit", handle) end },
 			},
 		},
 		{
@@ -435,30 +456,34 @@ local function build_items(root, bufnr, origin_win)
 			label = "Build type",
 			value = function() return cfg.cmake.build_type end,
 			value_hl = "String",
-			primary = {
-				desc = "select type",
-				close = false,
-				fn = function(handle) pick_param(root, "build_type", handle) end,
+			actions = {
+				{ key = "<CR>", desc = "select type", fn = function(handle) pick_param(root, "build_type", handle) end },
 			},
 		},
 		{ section = "tools" },
 		{
 			key = "R",
 			label = "Restart clangd",
-			primary = { desc = "restart", fn = function() M.restart_clangd(root) end },
+			actions = {
+				{ key = "<CR>", desc = "restart", close = true, fn = function() M.restart_clangd(root) end },
+			},
 		},
 		{
 			key = "m",
 			label = "Open ccmake",
-			primary = {
-				desc = "open in build dir",
-				fn = function()
-					if vim.api.nvim_win_is_valid(origin_win) then
-						vim.api.nvim_set_current_win(origin_win)
-					end
-					local build_dir = require("tasks.cmake_utils.cmake_utils").getBuildDirFromConfig(cfg.cmake)
-					vim.cmd("botright split term://ccmake " .. vim.fn.fnameescape(tostring(build_dir)))
-				end,
+			actions = {
+				{
+					key = "<CR>",
+					desc = "open in build dir",
+					close = true,
+					fn = function()
+						if vim.api.nvim_win_is_valid(origin_win) then
+							vim.api.nvim_set_current_win(origin_win)
+						end
+						local build_dir = require("tasks.cmake_utils.cmake_utils").getBuildDirFromConfig(cfg.cmake)
+						vim.cmd("botright split term://ccmake " .. vim.fn.fnameescape(tostring(build_dir)))
+					end,
+				},
 			},
 		},
 	})
@@ -468,10 +493,6 @@ end
 function M.open_menu()
 	local origin = vim.api.nvim_get_current_win()
 	local bufnr = vim.api.nvim_win_get_buf(origin)
-	if not is_cpp_buf(bufnr) then
-		vim.notify("cpp: not a C/C++ buffer", vim.log.levels.WARN)
-		return
-	end
 	-- No proactive notification for a missing root anywhere else (opening a
 	-- file, cwd sync, clangd startup all just silently no-op) - :Cpp is the
 	-- one place that's allowed to say so, since it was invoked deliberately.
@@ -480,6 +501,7 @@ function M.open_menu()
 	require("cpp.menu").open({
 		title = " " .. (root and vim.fs.basename(root) or "no project") .. " ",
 		min_width = 46,
+		note = function() return root_note(root) end,
 		items = build_items(root, bufnr, origin),
 	})
 end
