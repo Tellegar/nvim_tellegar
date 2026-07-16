@@ -207,6 +207,15 @@ end
 ------------------------------------------------------------------------------
 
 local function build_items()
+	-- Alt-key groups for actions bound to <CR>/<C-CR>: primary edits sit on
+	-- the right (l/<Right>/i/a), secondary edits (the -Define name) sit on
+	-- the left (h/<Left>/I/A). Single-action rows accept either via `.any`.
+	local interact = {
+		primary = { "l", "<Right>", "i", "a" },
+		secondary = { "h", "<Left>", "I", "A" },
+	}
+	interact.any = vim.list_extend(vim.list_extend({}, interact.primary), interact.secondary)
+
 	local items = { { section = "config" } }
 
 	if presets.available(ROOT()) then
@@ -220,7 +229,7 @@ local function build_items()
 				{
 					key = "<CR>",
 					desc = "select",
-					alt_keys = { "l", "<Right>", "i", "I", "a", "A" },
+					alt_keys = interact.any,
 					fn = function()
 						local list = presets.list(ROOT())
 						vim.ui.select(list, {
@@ -252,7 +261,7 @@ local function build_items()
 			{
 				key = "<CR>",
 				desc = "rename",
-				alt_keys = { "l", "<Right>", "i", "I", "a", "A" },
+				alt_keys = interact.any,
 				fn = function(h)
 					vim.ui.input({ prompt = "build dir name: ", default = select(1, build_dir_eff()) }, function(v)
 						config.build_dir = (v and v ~= "") and v or nil
@@ -285,7 +294,7 @@ local function build_items()
 			{
 				key = "<CR>",
 				desc = "select",
-				alt_keys = { "l", "<Right>", "i", "I", "a", "A" },
+				alt_keys = interact.any,
 				fn = function(h)
 					vim.ui.select({ "Debug", "RelWithDebInfo", "Release", "MinSizeRel" }, { prompt = "build type" }, function(choice)
 						if not choice then
@@ -323,7 +332,7 @@ local function build_items()
 			{
 				key = "<CR>",
 				desc = "select",
-				alt_keys = { "l", "<Right>", "i", "I", "a", "A" },
+				alt_keys = interact.any,
 				fn = function(h)
 					local choices = { "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
 					vim.ui.select(choices, { prompt = "generator" }, function(choice)
@@ -364,7 +373,7 @@ local function build_items()
 				{
 					key = "<C-CR>",
 					desc = "edit name",
-					alt_keys = { "h", "<Left>", "I", "A" },
+					alt_keys = interact.secondary,
 					fn = function()
 						if not config_define(name) then
 							vim.notify("scratch: '" .. name .. "' is preset-derived - edit value to override it first", vim.log.levels.INFO)
@@ -381,7 +390,7 @@ local function build_items()
 				{
 					key = "<CR>",
 					desc = "edit value",
-					alt_keys = { "l", "<Right>", "i", "a" },
+					alt_keys = interact.primary,
 					fn = function(h)
 						vim.ui.input({ prompt = name .. " = ", default = select(1, eff_define(name)) }, function(v)
 							if v ~= nil then
@@ -401,7 +410,7 @@ local function build_items()
 			{
 				key = "<CR>",
 				desc = "add cache var",
-				alt_keys = { "h", "<Right>", "i", "I", "a", "A" },
+				alt_keys = interact.any,
 				fn = function()
 					vim.ui.input({ prompt = "NAME=VALUE: " }, function(v)
 						if not v or v == "" then
