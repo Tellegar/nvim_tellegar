@@ -68,9 +68,9 @@
 --         note     = function() return {{text, hl}, ...} end,
 --                                  - left half of the footer line while selected
 --         actions  = { <action>, ... },  - ordered; per-entry
---         lines    = function() return { "text" | {{text, hl}, ...}, ... } end,
---                                  - extra full-width rows rendered below the
---                                    label row, still part of THIS entry: they
+--                                  - "\n" in `label` splits it into the label
+--                                    row plus full-width continuation rows
+--                                    below it, still part of THIS entry: they
 --                                    select/highlight/click as one unit (the
 --                                    cursor snaps back to the label row), for
 --                                    entries whose content doesn't fit one line
@@ -99,6 +99,39 @@ local api = vim.api
 
 local M = {}
 
+---@alias Cpp.MenuChunk { [1]: string, [2]: string? } text + optional highlight group
+---@alias Cpp.MenuChunks Cpp.MenuChunk[]
+---@alias Cpp.MenuText string|Cpp.MenuChunks
+
+---@class Cpp.MenuAction
+---@field key string normal-mode lhs (<CR>, l, <C-s>); pressing it runs `fn`
+---@field desc string shown next to `key` in the footer
+---@field fn fun(handle: Cpp.MenuHandle) receives the menu handle
+---@field close boolean? close the menu before running `fn` (default: stays open and re-renders)
+---@field alt_keys string[]? extra lhs's that run the same action but stay out of the footer
+---@field hidden boolean? keep `key` itself out of the footer while still mapping it
+
+---@class Cpp.MenuItem
+---@field section string? group header line (gap above + rule); not selectable
+---@field subsection string? lighter-weight header (no gap, no rule); not selectable
+---@field key string? quick-launch key, shown as a left column
+---@field label string|(fun(): string)|nil "\n" splits it into the label row plus full-width continuation
+---   rows below it (still part of this entry: they select/highlight/click as one unit, cursor snaps to the label row)
+---@field label_hl string|(fun(): string)|nil hl group for `label`, applied to every line it splits into
+---@field value Cpp.MenuText|(fun(): Cpp.MenuText)|nil right-aligned, label row only
+---@field value_hl string|(fun(): string)|nil hl group used when `value` resolves to a plain string
+---@field note Cpp.MenuChunks|(fun(): Cpp.MenuChunks)|nil left half of the footer line while this item is selected
+---@field actions Cpp.MenuAction[]? ordered, per-entry
+
+---@class Cpp.MenuSpec
+---@field title string? window title
+---@field min_width integer? lower bound on the window width
+---@field on_close fun()? called once when the menu closes
+---@field note Cpp.MenuChunks|(fun(): Cpp.MenuChunks)|nil left half of the global footer line
+---@field select_key string? preselect the item whose `key` matches this instead of the first selectable item
+---@field actions Cpp.MenuAction[]? menu-global actions; fire from any entry, shadow a per-item action of same key
+---@field items Cpp.MenuItem[]
+
 local ns = api.nvim_create_namespace("cpp_menu")
 local ns_sel = api.nvim_create_namespace("cpp_menu_sel")
 
@@ -107,11 +140,9 @@ local ns_sel = api.nvim_create_namespace("cpp_menu_sel")
 local HLS = {
 	CppMenuNormal = "NormalFloat",
 	CppMenuBorder = "FloatBorder",
-	CppMenuTitle = "FloatTitle",
 	CppMenuSelected = "CursorLine",
 	CppMenuIndicator = "Special",
 	CppMenuKey = "Special",
-	CppMenuLabel = "Normal",
 	CppMenuValue = "Comment",
 	CppMenuSection = "Comment",
 	CppMenuRule = "NonText",
@@ -119,9 +150,30 @@ local HLS = {
 	CppMenuHintKey = "Special",
 }
 
+-- These two sit on top of the window/float background (the title bar, and
+-- any label with no label_hl override). A plain `link` would also pull in
+-- the target's own bg - and many themes set an explicit guibg on Normal /
+-- FloatTitle for solid-background floats - which then mismatches
+-- CppMenuNormal's bg and shows as a boxed highlight behind the text. Fg-only
+-- so the window's own background shows through instead.
+local FG_ONLY_HLS = {
+	CppMenuTitle = "FloatTitle",
+	CppMenuLabel = "Normal",
+}
+
 local function ensure_hl()
 	for name, link in pairs(HLS) do
 		api.nvim_set_hl(0, name, { link = link, default = true })
+	end
+	-- CppMenuLabel paints over buffer content, already based to CppMenuNormal
+	-- (winhighlight), so an unset bg there falls through correctly. Title is
+	-- window furniture, not buffer content - an unset bg on it falls back to
+	-- the *global* Normal instead of the float's NormalFloat, so it needs the
+	-- float's bg spelled out explicitly to actually match.
+	local win_bg = api.nvim_get_hl(0, { name = "NormalFloat", link = false }).bg
+	for name, link in pairs(FG_ONLY_HLS) do
+		local resolved = api.nvim_get_hl(0, { name = link, link = false })
+		api.nvim_set_hl(0, name, { fg = resolved.fg, bg = win_bg, default = true })
 	end
 	-- blend = 100 makes the real cursor invisible while it sits in the menu
 	-- (the ▌ indicator plays that role instead); not default = true, since
@@ -239,6 +291,18 @@ local function global_footer(spec, width)
 	return footer_line(note_chunks(spec), keys_chunks(spec.actions, true), width)
 end
 
+---@class Cpp.MenuHandle
+---@field spec Cpp.MenuSpec the spec this menu was opened with
+---@field sel integer index into spec.items of the currently selected entry
+---@field buf integer menu buffer handle
+---@field win integer menu floating-window handle
+---@field win_config table nvim_win_get_config-shaped table kept in sync on render
+---@field layout table last layout built by :_build() (lines/spans/row<->item maps/width)
+---@field closed boolean? true once :close() has run
+---@field augroup integer autocommand group tied to this menu's buffer
+---@field saved_guicursor string? guicursor value saved while the real cursor is hidden
+---@field render fun(self: Cpp.MenuHandle) re-resolves every live field and repaints, resizing/recentering if widths changed
+---@field close fun(self: Cpp.MenuHandle) dismisses the menu, restores cursor/focus, runs spec.on_close
 local Menu = {}
 Menu.__index = Menu
 
@@ -249,13 +313,18 @@ local function selectable(item)
 	return item and not item.section and item.actions ~= nil and #item.actions > 0
 end
 
-
---- Normalizes one `lines` entry to a chunk list.
-local function extra_line_chunks(ln, label_hl)
-	if type(ln) == "string" then
-		return { { "     " }, { ln, label_hl or "CppMenuLabel" } }
+--- Splits a resolved label on "\n" into its first (label-row) line and any
+--- continuation lines, the latter pre-wrapped as full-width chunk rows
+--- indented to align under the label column.
+local function label_lines(it)
+	local text = resolve(it.label) or ""
+	local split = vim.split(text, "\n", { plain = true })
+	local hl = resolve(it.label_hl) or "CppMenuLabel"
+	local extra = {}
+	for i = 2, #split do
+		extra[#extra + 1] = { { "     " }, { split[i], hl } }
 	end
-	return ln
+	return split[1], hl, extra
 end
 
 --- Lays the spec out into buffer lines + highlight spans. Width is computed
@@ -264,7 +333,7 @@ end
 function Menu:_build()
 	local items = self.spec.items
 
-	local lefts, values, extras = {}, {}, {}
+	local lefts, values, firsts, first_hls, extras = {}, {}, {}, {}, {}
 	local width = math.max(self.spec.min_width or 44, dw(self.spec.title or "") + 8)
 	for i, it in ipairs(items) do
 		if it.section then
@@ -272,17 +341,14 @@ function Menu:_build()
 		elseif it.subsection then
 			width = math.max(width, dw(it.subsection) + 4)
 		else
-			lefts[i] = "  " .. (it.key or " ") .. "  " .. resolve(it.label)
+			local first, hl, extra = label_lines(it)
+			firsts[i], first_hls[i], extras[i] = first, hl, extra
+			lefts[i] = "  " .. (it.key or " ") .. "  " .. first
 			values[i] = value_chunks(it)
 			local w = dw(lefts[i]) + (values[i] and (3 + chunks_width(values[i])) or 0)
 			width = math.max(width, w + 2, footer_width(note_chunks(it), keys_chunks(it.actions, false)))
-			if it.lines then
-				extras[i] = {}
-				for _, ln in ipairs(resolve(it.lines)) do
-					local chunks = extra_line_chunks(ln, resolve(it.label_hl))
-					extras[i][#extras[i] + 1] = chunks
-					width = math.max(width, chunks_width(chunks) + 2)
-				end
+			for _, chunks in ipairs(extra) do
+				width = math.max(width, chunks_width(chunks) + 2)
 			end
 		end
 	end
@@ -316,7 +382,7 @@ function Menu:_build()
 				{ "  " },
 				it.key and { it.key, "CppMenuKey" } or { " " },
 				{ "  " },
-				{ resolve(it.label), resolve(it.label_hl) or "CppMenuLabel" },
+				{ firsts[i], first_hls[i] },
 			}
 			if values[i] then
 				local pad = width - 2 - dw(lefts[i]) - chunks_width(values[i])
@@ -517,8 +583,8 @@ function Menu:close()
 	end
 end
 
----@param spec { title: string, items: table[], actions: table[]?, note: (fun(): table[])|table[]|nil, min_width: integer?, on_close: fun()? }
----@return table handle  with :close() and :render()
+---@param spec Cpp.MenuSpec
+---@return Cpp.MenuHandle handle
 function M.open(spec)
 	ensure_hl()
 	if current then
@@ -693,4 +759,3 @@ end
 
 return M
 -- TODO explore editable fields
--- TODO more concrete action keymaps
