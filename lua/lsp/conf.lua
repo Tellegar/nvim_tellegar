@@ -18,6 +18,8 @@
 -- })
 
 
+require("lsp.shrink_unnecessary").setup()
+
 -- clangd is started per-project-root (not via the static vim.lsp.enable
 -- path) so that multiple C/C++ projects open in different windows/tabs get
 -- independent clients with correct --compile-commands-dir each. See cpp.lua,
