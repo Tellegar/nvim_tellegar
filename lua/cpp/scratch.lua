@@ -428,7 +428,7 @@ local function build_items()
 	end
 	table.insert(items, {
 		key = "D",
-		label = "Add -D…",
+		label = "Add -Define",
 		actions = {
 			{
 				key = "<CR>",
