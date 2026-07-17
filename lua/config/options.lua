@@ -24,6 +24,11 @@ o.smartcase = true
 -- diff
 o.fillchars:append({ diff = "╱" }) -- ╱╲╳ -- ██
 
+-- folding
+o.foldmethod = "expr"
+o.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+o.foldlevelstart = 99
+
 -- do not continue comments (e.g. in normal mode pressing o/O won't insert comment)
 local grp = vim.api.nvim_create_augroup("no_auto_comment", { clear = true })
 autocmd({ "FileType" }, {
