@@ -138,7 +138,9 @@ local function OpenOutputWindow(buf)
 end
 
 -- Run entire buffer as Lua
-user_cmd("RunLuaBuffer", function()
+user_cmd("RunLuaBuffer", function(opts)
+	local silent = opts.fargs[1] == "silent"
+
 	local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 	local code = table.concat(lines, "\n")
 
@@ -166,6 +168,13 @@ user_cmd("RunLuaBuffer", function()
 	end)
 
 	print = old_print
+
+	if silent then
+		if not ok then
+			vim.notify("RunLuaBuffer: " .. err, vim.log.levels.ERROR)
+		end
+		return
+	end
 
 	if not ok then
 		output = { "Error: " .. err }
@@ -209,7 +218,13 @@ user_cmd("RunLuaBuffer", function()
 			output_win = -1
 		end
 	end, { buffer = output_buf, silent = true, desc = "close this buffer" })
-end, { desc = "run current buffer as nvim lua code" })
+end, {
+	desc = "run current buffer as nvim lua code",
+	nargs = "?",
+	complete = function()
+		return { "silent" }
+	end,
+})
 
 user_cmd("ToggleInlayHints", function()
 	vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({0}),{0})
