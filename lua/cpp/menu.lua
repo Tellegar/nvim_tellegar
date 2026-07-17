@@ -204,15 +204,38 @@ local KEY_SYMBOLS = {
 	["<Right>"] = "→",
 	["<Left>"] = "←",
 }
+-- Modifier prefixes peeled off one at a time (order they appear in the lhs),
+-- each rendered as a short glyph prepended to the base key's symbol.
+local MOD_SYMBOLS = {
+	{ pat = "^<C%-(.+)>$", glyph = "⌃" },
+	{ pat = "^<S%-(.+)>$", glyph = "⇧" },
+	{ pat = "^<M%-(.+)>$", glyph = "⌥" },
+}
 local function key_symbol(key)
 	if KEY_SYMBOLS[key] then
 		return KEY_SYMBOLS[key]
 	end
-	local ctrl = key:match("^<C%-(.+)>$")
-	if ctrl then
-		return "^" .. (KEY_SYMBOLS["<" .. ctrl .. ">"] or ctrl)
+	local prefix = ""
+	local rest = key
+	while true do
+		local matched = false
+		for _, mod in ipairs(MOD_SYMBOLS) do
+			local inner = rest:match(mod.pat)
+			if inner then
+				prefix = prefix .. mod.glyph
+				rest = "<" .. inner .. ">"
+				matched = true
+				break
+			end
+		end
+		if not matched then
+			break
+		end
 	end
-	return key
+	if prefix == "" then
+		return key
+	end
+	return prefix .. (KEY_SYMBOLS[rest] or rest:match("^<(.+)>$") or rest)
 end
 
 --- Normalizes an item's `value` to a chunk list ({{text, hl}, ...}) or nil.
@@ -648,7 +671,10 @@ function M.open(spec)
 	map("G", function() self:_edge(true) end)
 	map("q", function() self:close() end)
 	map("<Esc>", function() self:close() end)
-	for _, lhs in ipairs({ "i", "I", "a", "A", "o", "O" }) do
+	for _, lhs in ipairs({
+		"i", "I", "a", "A", "o", "O",
+		"<CR>", "<S-CR>", "<M-CR>"
+	}) do
 		map(lhs, function() end)
 	end
 
@@ -693,12 +719,7 @@ function M.open(spec)
 	for key in pairs(keys) do
 		map(key, function() dispatch(key) end)
 	end
-	-- <Right> mirrors an `l` action, matching the old expand binding.
-	if keys["l"] then
-		map("<Right>", function() dispatch("l") end)
-	end
-
-	-- Quick-launch: an item's `key` selects it and runs its <CR> action.
+-- Quick-launch: an item's `key` selects it and runs its <CR> action.
 	for i, it in ipairs(spec.items) do
 		if it.key and item_action(it, "<CR>") then
 			map(it.key, function()
