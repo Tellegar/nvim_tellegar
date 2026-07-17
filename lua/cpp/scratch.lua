@@ -268,10 +268,13 @@ local function build_items()
 				desc = "rename",
 				alt_keys = interact.any,
 				fn = function(h)
-					vim.ui.input({ prompt = "build dir name: ", default = select(1, build_dir_eff()) }, function(v)
-						config.build_dir = (v and v ~= "") and v or nil
-						h:render()
-					end)
+					vim.ui.input(
+						{ prompt = "build dir name: ", default = select(1, build_dir_eff()) },
+						function(v)
+							config.build_dir = (v and v ~= "") and v or nil
+							h:render()
+						end
+					)
 				end,
 			},
 		},
@@ -292,7 +295,10 @@ local function build_items()
 					if remove_config_define("CMAKE_BUILD_TYPE") then
 						h:render()
 					elseif eff_define("CMAKE_BUILD_TYPE") ~= nil then
-						vim.notify("scratch: build type is a preset default - override it instead", vim.log.levels.INFO)
+						vim.notify(
+							"scratch: build type is a preset default - override it instead",
+							vim.log.levels.INFO
+						)
 					end
 				end,
 			},
@@ -301,18 +307,22 @@ local function build_items()
 				desc = "select",
 				alt_keys = interact.any,
 				fn = function(h)
-					vim.ui.select({ "Debug", "RelWithDebInfo", "Release", "MinSizeRel" }, { prompt = "build type" }, function(choice)
-						if not choice then
-							return
+					vim.ui.select(
+						{ "Debug", "RelWithDebInfo", "Release", "MinSizeRel" },
+						{ prompt = "build type" },
+						function(choice)
+							if not choice then
+								return
+							end
+							local existed = eff_define("CMAKE_BUILD_TYPE") ~= nil
+							set_config_define("CMAKE_BUILD_TYPE", choice)
+							if existed then
+								h:render()
+							else
+								M.open()
+							end
 						end
-						local existed = eff_define("CMAKE_BUILD_TYPE") ~= nil
-						set_config_define("CMAKE_BUILD_TYPE", choice)
-						if existed then
-							h:render()
-						else
-							M.open()
-						end
-					end)
+					)
 				end,
 			},
 		},
@@ -340,13 +350,15 @@ local function build_items()
 				alt_keys = interact.any,
 				fn = function(h)
 					local choices = { "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
-					vim.ui.select(choices, { prompt = "generator" }, function(choice)
-						if not choice then
-							return
+					vim.ui.select(
+						choices,
+						{ prompt = "generator" },
+						function(choice)
+							if not choice then return end
+							config.generator = choice
+							h:render()
 						end
-						config.generator = choice
-						h:render()
-					end)
+					)
 				end,
 			},
 		},
