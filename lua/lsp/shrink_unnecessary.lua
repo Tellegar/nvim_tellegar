@@ -1,7 +1,8 @@
--- lua_ls (and others) report the whole function/local statement as the range
--- for "unused" diagnostics (LSP DiagnosticTag.Unnecessary), so the built-in
--- strikethrough covers the entire body instead of just the name. Shrink that
--- range down to the identifier itself before it reaches vim.diagnostic.
+-- lua_ls reports "unused-function" diagnostics with the whole function
+-- statement as the range (LSP DiagnosticTag.Unnecessary), so the built-in
+-- strikethrough covers the entire body instead of just the name. Other
+-- "unused" diagnostics (e.g. unused-local/unused-parameter) already get a
+-- correctly-scoped range by default, so only unused-function is touched here.
 
 local M = {}
 
@@ -10,6 +11,9 @@ local UNNECESSARY = 1 -- lsp.DiagnosticTag.Unnecessary
 ---@param diag table
 ---@param bufnr integer
 local function shrink(diag, bufnr)
+	if diag.code ~= "unused-function" then
+		return
+	end
 	if not (diag.tags and vim.list_contains(diag.tags, UNNECESSARY)) then
 		return
 	end
@@ -23,7 +27,9 @@ local function shrink(diag, bufnr)
 	local name = diag.message:match("`([%w_.]+)`") or text:match("function%s+([%w_.:]+)")
 	local s, e
 	if name then
-		s, e = text:find(name, 1, true)
+		-- word-boundary search, so e.g. `define` doesn't match inside `bi_define`
+		local pat = "%f[%w_]" .. name:gsub("%W", "%%%0") .. "%f[^%w_]"
+		s, e = text:find(pat)
 	end
 	if not s then
 		-- fallback: at least don't let it span multiple lines
