@@ -383,7 +383,10 @@ local function build_items()
 						if remove_config_define(name) then
 							M.open()
 						elseif eff_define(name) ~= nil then
-							vim.notify("scratch: '" .. name .. "' is a preset default - override its value instead", vim.log.levels.INFO)
+							vim.notify(
+								"scratch: '" .. name .. "' is a preset default - override its value instead",
+								vim.log.levels.INFO
+							)
 						end
 					end,
 				},
@@ -393,15 +396,21 @@ local function build_items()
 					alt_keys = interact.secondary,
 					fn = function()
 						if not config_define(name) then
-							vim.notify("scratch: '" .. name .. "' is preset-derived - edit value to override it first", vim.log.levels.INFO)
+							vim.notify(
+								"scratch: '" .. name .. "' is preset-derived - edit value to override it first",
+								vim.log.levels.INFO
+							)
 							return
 						end
-						vim.ui.input({ prompt = "var name: ", default = name }, function(v)
-							if v and v ~= "" and v ~= name then
-								config_define(name).name = v
-								M.open()
+						vim.ui.input(
+							{ prompt = "var name: ", default = name },
+							function(v)
+								if v and v ~= "" and v ~= name then
+									config_define(name).name = v
+									M.open()
+								end
 							end
-						end)
+						)
 					end,
 				},
 				{
@@ -409,12 +418,15 @@ local function build_items()
 					desc = "edit value",
 					alt_keys = interact.primary,
 					fn = function(h)
-						vim.ui.input({ prompt = name .. " = ", default = select(1, eff_define(name)) }, function(v)
-							if v ~= nil then
-								set_config_define(name, v) -- promotes a preset default to explicit
-								h:render()
+						vim.ui.input(
+							{ prompt = name .. " = ", default = select(1, eff_define(name)) },
+							function(v)
+								if v ~= nil then
+									set_config_define(name, v) -- promotes a preset default to explicit
+									h:render()
+								end
 							end
-						end)
+						)
 					end,
 				},
 				{
@@ -447,18 +459,21 @@ local function build_items()
 				desc = "add cache var",
 				alt_keys = interact.any,
 				fn = function()
-					vim.ui.input({ prompt = "NAME=VALUE: " }, function(v)
-						if not v or v == "" then
-							return
+					vim.ui.input(
+						{ prompt = "NAME=VALUE: " },
+						function(v)
+							if not v or v == "" then
+								return
+							end
+							local n, val = v:match("^%s*([^=]-)%s*=(.*)$")
+							if not n or n == "" then
+								vim.notify("scratch: expected NAME=VALUE", vim.log.levels.WARN)
+								return
+							end
+							set_config_define(n, val)
+							M.open("D")
 						end
-						local n, val = v:match("^%s*([^=]-)%s*=(.*)$")
-						if not n or n == "" then
-							vim.notify("scratch: expected NAME=VALUE", vim.log.levels.WARN)
-							return
-						end
-						set_config_define(n, val)
-						M.open("D")
-					end)
+					)
 				end,
 			},
 		},
