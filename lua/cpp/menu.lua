@@ -324,6 +324,7 @@ end
 ---@field closed boolean? true once :close() has run
 ---@field augroup integer autocommand group tied to this menu's buffer
 ---@field saved_guicursor string? guicursor value saved while the real cursor is hidden
+---@field dispatched_key string? the lhs that triggered the action currently running (set just before `fn` runs)
 ---@field render fun(self: Cpp.MenuHandle) re-resolves every live field and repaints, resizing/recentering if widths changed
 ---@field close fun(self: Cpp.MenuHandle) dismisses the menu, restores cursor/focus, runs spec.on_close
 local Menu = {}
@@ -552,10 +553,13 @@ end
 
 --- Runs an action. Actions with close = true close the menu first (so tasks
 --- land in the origin window); the rest stay open and re-render in place.
-function Menu:_run(action)
+--- @param key string? the lhs that triggered `action` (its `key` or one of its
+--- `alt_keys`); exposed to `action.fn` as `self.dispatched_key`.
+function Menu:_run(action, key)
 	if not action then
 		return
 	end
+	self.dispatched_key = key
 	if action.close then
 		self:close()
 		action.fn(self)
@@ -701,7 +705,7 @@ function M.open(spec)
 		end
 	end
 	local function dispatch(key)
-		self:_run(global_by_key[key] or item_action(spec.items[self.sel], key))
+		self:_run(global_by_key[key] or item_action(spec.items[self.sel], key), key)
 	end
 	local keys = {}
 	for _, a in ipairs(spec.actions or {}) do
