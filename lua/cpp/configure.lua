@@ -3,19 +3,24 @@
 
 local M = {}
 
+---@class Cpp.Define
+---@field name string
+---@field value string
+
 ---@class Cpp.Config
 ---@field cmake_preset_name string?
 ---@field build_dir string?
 ---@field generator string?
----@field defines { name: string, value: string }[]
+---@field defines Cpp.Define[]
 
 ---@param config Cpp.Config
 ---@param name string
 ---@return string? value nil if `name` isn't set
+---@return integer? index nil if `name` isn't set
 local function define_get(config, name)
-	for _, d in ipairs(config.defines) do
+	for i, d in ipairs(config.defines) do
 		if d.name == name then
-			return d.value
+			return d.value, i
 		end
 	end
 end
@@ -51,6 +56,17 @@ end
 -- Command
 ------------------------------------------------------------------------------
 
+--- Concatenates any number of array-like tables into a new array.
+---@param ... table
+---@return table
+local function concat(...)
+	local result = {}
+	for _, t in ipairs({ ... }) do
+		vim.list_extend(result, t)
+	end
+	return result
+end
+
 local function escape(str)
 	if str:match("^[%w%-%.,_/:=]+$") then
 		return str
@@ -79,7 +95,7 @@ function M.command_parts(config)
 		parts[#parts + 1] = "-G " .. escape(config.generator)
 	end
 	for _, d in ipairs(config.defines) do
-		parts[#parts + 1] = "-D" .. escape(d.name) .. "=" .. escape(d.value)
+		parts[#parts + 1] = escape("-D" .. d.name .. "=" .. d.value)
 	end
 
 	return parts
@@ -110,9 +126,34 @@ local config = {
 	defines = {},
 }
 
+---@type Cpp.Config
+local config_preset = vim.deepcopy(config)
+
+-- vv testing vv
+config.defines = {
+	{ name = "a_name", value = "a_value" },
+	{ name = "b_name", value = "b_value" },
+}
+
+config_preset = {
+	cmake_preset_name = "gcc-debug",
+	build_dir = "gcc-debug",
+	generator = "Ninja",
+	defines = {
+		{ name = "CMAKE_BUILD_TYPE", value = "Debug" },
+		{ name = "CMAKE_CXX_COMPILER", value = "g++" },
+		{ name = "CMAKE_C_COMPILER", value = "gcc" },
+		{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" },
+	},
+}
+-- ^^ testing ^^
+
+
 local interact = {
-	--primary = { "l", "<Right>", "i", "a" },
-	--secondary = { "h", "<Left>", "I", "A" },
+	left =   { "h", "<Left>" },
+	right =  { "l", "<Right>" },
+	insert = { "i", "I" },
+	append = { "a", "A" },
 	any = {
 		"h", "<Left>",
 		"l", "<Right>",
@@ -120,6 +161,9 @@ local interact = {
 		"a", "A",
 	}
 }
+
+---@return Cpp.MenuItem[]
+local build_items
 
 ---@return Cpp.MenuItem
 local function bi_build_dir()
@@ -133,7 +177,7 @@ local function bi_build_dir()
 		)
 	end
 
-	return {
+	return { ---@type Cpp.MenuItem
 		key = "d",
 		label = "Build dir",
 		-- TODO build_dir can be generated/unset/set
@@ -162,7 +206,7 @@ end
 local function bi_build_type()
 	-- TODO explore if cmake doesnt expose valid CMAKE_BUILD_TyPE values
 	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
-	return {
+	return { ---@type Cpp.MenuItem
 		key = "t",
 		label = "Build type",
 		value = function()
@@ -195,7 +239,7 @@ end
 local function bi_generator()
 	-- TODO explore if cmake doesnt expose valid -G values
 	local choices = { "(unset)", "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
-	return {
+	return { ---@type Cpp.MenuItem
 		key = "g",
 		label = "Generator",
 		value = function()
@@ -224,8 +268,170 @@ local function bi_generator()
 end
 
 ---@return Cpp.MenuItem
+---@param define Cpp.Define
+local function bi_define(define)
+	local name, value = define.name, define.value
+	local text = escape(define.name .. "=" .. define.value)
+
+	return { ---@type Cpp.MenuItem
+		label = function() return name end,
+		value = function() return value end,
+		actions = {
+			{
+				key = "x",
+				desc = "remove",
+				fn = function(h)
+					-- if local name is not in config.defines
+					--   that means that current bi_define is outdated
+					--   and was not called after defines was modified
+					define_clear(config, name)
+					h.spec.items = build_items()
+					h:render()
+
+					--if remove_config_define(name) then
+					--	M.open()
+					--elseif eff_define(name) ~= nil then
+					--	vim.notify(
+					--		"scratch: '" .. name .. "' is a preset default - override its value instead",
+					--		vim.log.levels.INFO
+					--	)
+					--end
+				end,
+			},
+			{
+				key = "<S-CR>",
+				desc = "edit name",
+				alt_keys = concat(interact.left, { "I", "A" }),
+				fn = function(h)
+					local default = h.dispatched_key == "I" and "" or name
+					if not default then
+						vim.notify("default is nil, should not happen")
+						return
+					end
+
+					local _, i = define_get(config, name)
+
+					vim.ui.input(
+						{ prompt = "var name: ", default = default },
+						function(v)
+							if not v or v == "" then return end
+							-- TODO strip v
+							--notify("v: " .. tostring(v) .. " i: " .. i)
+							config.defines[i].name = v -- this will not work with config_preset
+							h.spec.items = build_items()
+							h:render()
+						end
+					)
+
+					--if not config_define(name) then
+					--	vim.notify(
+					--		"scratch: '" .. name .. "' is preset-derived - edit value to override it first",
+					--		vim.log.levels.INFO
+					--	)
+					--	return
+					--end
+					--vim.ui.input(
+					--	{ prompt = "var name: ", default = name },
+					--	function(v)
+					--		if v and v ~= "" and v ~= name then
+					--			config_define(name).name = v
+					--			M.open()
+					--		end
+					--	end
+					--)
+				end,
+			},
+			{
+				key = "<CR>",
+				desc = "edit value",
+				alt_keys = concat(interact.right, { "i", "a" }),
+				fn = function(h)
+					local default = h.dispatched_key == "i" and "" or value
+					if not default then
+						vim.notify("default is nil, should not happen")
+						return
+					end
+
+					vim.ui.input(
+						{ prompt = name .. " = ", default = default },
+						function(v)
+							if not v then return end
+							-- TODO rstrip v
+							define_set(config, name, v)
+							h.spec.items = build_items()
+							h:render()
+						end
+
+						--{ prompt = name .. " = ", default = select(1, eff_define(name)) },
+						--function(v)
+						--	if v ~= nil then
+						--		set_config_define(name, v) -- promotes a preset default to explicit
+						--		h:render()
+						--	end
+						--end
+					)
+				end,
+			},
+			{
+				key = "y",
+				desc = "copy (vim)",
+				hidden = true,
+				fn = function()
+					vim.fn.setreg('"', text)
+					vim.notify("scratch: copied -D" .. name .. " (vim)", vim.log.levels.INFO)
+				end,
+			},
+			{
+				key = "+",
+				desc = "copy (system)",
+				hidden = true,
+				fn = function()
+					vim.fn.setreg("+", text)
+					vim.notify("scratch: copied -D" .. name .. " (system)", vim.log.levels.INFO)
+				end,
+			},
+		},
+	}
+end
+
+---@param items Cpp.MenuItem[]
+local function bi_defines(items)
+	for _, define in ipairs(config.defines) do
+		items[#items+1] = bi_define(define)
+	end
+end
+
+---@return Cpp.MenuItem
+local function bi_add_define()
+	return { ---@type Cpp.MenuItem
+		key = "D",
+		label = "Add -Define",
+		actions = {
+			{
+				key = "<CR>",
+				desc = "add cache var",
+				alt_keys = interact.any,
+				fn = function(h)
+					vim.ui.input(
+						{ prompt = "NAME=VALUE: " },
+						function(v)
+							if not v then return end
+							local name, value = v:match("^%s*([^=]-)%s*=(.*)$")
+							define_set(config, name, value)
+							h.spec.items = build_items()
+							h.sel = h.sel + 1
+							h:render()
+						end
+					)
+				end
+			},
+		},
+	}
+end
+
+---@return Cpp.MenuItem
 local function bi_build_command()
-	return {
+	return { ---@type Cpp.MenuItem
 		label = function() return table.concat(M.command_parts(config), "\n") end,
 		label_hl = "Comment",
 		actions = {
@@ -250,7 +456,7 @@ local function bi_build_command()
 end
 
 ---@return Cpp.MenuItem[]
-local function build_items()
+function build_items()
 	local items = {} ---@type Cpp.MenuItem[]
 
 	items[#items+1] = {
@@ -262,6 +468,10 @@ local function build_items()
 	items[#items+1] = bi_build_dir()
 	items[#items+1] = bi_build_type()
 	items[#items+1] = bi_generator()
+
+	items[#items+1] = { subsection = "-Defines" }
+	bi_defines(items)
+	items[#items+1] = bi_add_define()
 
 	items[#items+1] = { label = "" }
 	items[#items+1] = bi_build_command()
@@ -286,7 +496,7 @@ end
 package.loaded["cpp.menu"] = nil
 package.loaded["cpp.configure"] = nil
 
-M.menu()
+--M.menu()
 --config.build_dir = "asd"
 --config.generator = "Ninja"
 --
@@ -294,5 +504,13 @@ M.menu()
 --vim.print(config)
 
 vim.keymap.set("n", "<C-Space>", ":RunLuaBuffer silent<CR>")
+
+local cmake_presets = require("cpp.cmake_presets")
+
+--vim.print(cmake_presets.list("~/t"))
+vim.print(cmake_presets.resolve("~/t", "gcc-debug"))
+
+
+
 
 return M
