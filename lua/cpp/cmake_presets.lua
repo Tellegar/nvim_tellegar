@@ -15,6 +15,27 @@ local M = {}
 local uv = vim.uv or vim.loop
 local PRESET_FILES = { "CMakePresets.json", "CMakeUserPresets.json" }
 
+---@class Cpp.CMakePresetListEntry
+---@field name string
+---@field display string
+
+---@class Cpp.CMakePresetRaw
+---@field generator string?
+---@field binaryDir string?
+---@field toolchainFile string?
+---@field cacheVariables table<string, any>
+
+---@class Cpp.CMakePresetMacroCtx
+---@field sourceDir string
+---@field sourceParentDir string
+---@field sourceDirName string
+---@field presetName string
+---@field generator string
+---@field hostSystemName string
+---@field dollar string
+
+---@param path string
+---@return table? data decoded JSON, nil on read/parse failure
 local function read_json(path)
 	local ok, lines = pcall(vim.fn.readfile, path)
 	if not ok then
@@ -26,6 +47,9 @@ end
 
 --- Collects configurePresets from a file and everything it `include`s, keyed
 --- by name (first definition wins). `seen` guards include cycles.
+---@param path string
+---@param into table<string, table> raw preset json objects, keyed by name
+---@param seen table<string, true>
 local function collect_from_file(path, into, seen)
 	path = vim.fs.normalize(path)
 	if seen[path] then
@@ -48,6 +72,8 @@ local function collect_from_file(path, into, seen)
 end
 
 --- All configure presets for a root, keyed by name (raw, unresolved).
+---@param root string
+---@return table<string, table> raw preset json objects, keyed by name
 local function collect(root)
 	local into, seen = {}, {}
 	for _, f in ipairs(PRESET_FILES) do
@@ -57,6 +83,8 @@ local function collect(root)
 end
 
 --- True if the project has any presets file.
+---@param root string
+---@return boolean
 function M.available(root)
 	for _, f in ipairs(PRESET_FILES) do
 		if uv.fs_stat(root .. "/" .. f) then
@@ -67,6 +95,8 @@ function M.available(root)
 end
 
 --- Selectable (non-hidden) configure presets: { { name, display }, ... }.
+---@param root string
+---@return Cpp.CMakePresetListEntry[]
 function M.list(root)
 	local out = {}
 	for name, p in pairs(collect(root)) do
@@ -84,14 +114,21 @@ end
 -- Resolution: inherits chain + macros.
 ------------------------------------------------------------------------------
 
+---@param v string|table|nil
+---@return table
 local function as_list(v)
 	if v == nil then
 		return {}
 	end
-	return type(v) == "string" and { v } or v
+	if type(v) == "string" then
+		return { v }
+	end
+	return v
 end
 
 --- cacheVariables value -> string. Accepts string | bool | number | {value=}.
+---@param v string|boolean|number|{value: string|boolean|number}
+---@return string
 local function cache_value(v)
 	if type(v) == "table" then
 		v = v.value
@@ -103,6 +140,8 @@ local function cache_value(v)
 end
 
 --- Overlay one preset's raw fields (child) over an accumulator (base).
+---@param acc Cpp.CMakePresetRaw
+---@param p table raw preset json object
 local function overlay(acc, p)
 	if p.generator then
 		acc.generator = p.generator
@@ -120,6 +159,10 @@ end
 
 --- Resolve a preset's raw fields, walking inherits. First-listed inherit wins;
 --- the preset's own fields win over all inherited.
+---@param name string
+---@param presets table<string, table> raw preset json objects, keyed by name
+---@param visiting table<string, true> guards inherits cycles
+---@return Cpp.CMakePresetRaw
 local function resolve_raw(name, presets, visiting)
 	local p = presets[name]
 	if not p or visiting[name] then
@@ -136,6 +179,10 @@ local function resolve_raw(name, presets, visiting)
 	return acc
 end
 
+---@param root string
+---@param preset_name string
+---@param generator string?
+---@return Cpp.CMakePresetMacroCtx
 local function macro_ctx(root, preset_name, generator)
 	return {
 		sourceDir = root,
@@ -148,6 +195,9 @@ local function macro_ctx(root, preset_name, generator)
 	}
 end
 
+---@param str string?
+---@param ctx Cpp.CMakePresetMacroCtx
+---@return string?
 local function expand(str, ctx)
 	if type(str) ~= "string" then
 		return str
@@ -166,6 +216,9 @@ end
 ---   { cmake_preset_name, build_dir, generator, defines = {{name,value},...} }
 --- `build_dir` is the basename of the resolved binaryDir (our build/<name>
 --- convention); binaryDir pointing elsewhere is an edge case we ignore for now.
+---@param root string
+---@param name string
+---@return Cpp.Config? config nil if `name` isn't a known preset
 function M.resolve(root, name)
 	local presets = collect(root)
 	if not presets[name] then
