@@ -48,3 +48,11 @@ autocmd("TextYankPost", {
 })
 
 g.python_recommended_style = 0
+
+autocmd("FileType", {
+	pattern = "lua",
+	callback = function()
+		vim.opt_local.tabstop = 2
+		vim.opt_local.shiftwidth = 0
+	end,
+})
