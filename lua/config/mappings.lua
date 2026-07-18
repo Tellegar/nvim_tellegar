@@ -166,6 +166,55 @@ plugin_keymap.telescope = function()
 	map("n", "<leader>fb", builtin.buffers,     	{ desc = "Telescope buffers" })
 	map("n", "gb", builtin.buffers,             	{ desc = "Telescope buffers" })
 	map("n", "<leader>fh", builtin.help_tags,   	{ desc = "Telescope help tags" })
+
+	-- Two-level ordering for document symbols, matching this comparator:
+	--     if a_substr ~= b_substr then a ranks by substr
+	--     else                         a ranks by fzy
+	-- substr = whether the ordinal literally contains the typed text. A literal
+	-- substring is a stronger hit than a scattered fuzzy subsequence, so those
+	-- entries group above the fuzzy-only ones; within the substring group we
+	-- fall to file order (entry.index = document order), within the fuzzy-only
+	-- group to fzy match quality.
+	--
+	-- The sorter score is just the coarse group (exact ties within a group);
+	-- telescope calls `tiebreak` only between equal-score entries, so it does
+	-- the real per-group comparison -- no folding/scaling fudge factor.
+	local function symbols_sorter()
+		local sorters = require("telescope.sorters")
+		local fzy = require("telescope.algos.fzy")
+
+		local function has_substr(prompt, s)
+			return s:lower():find(prompt:lower(), 1, true) ~= nil
+		end
+
+		local sorter = sorters.new({
+			scoring_function = function(_, prompt, line)
+				if has_substr(prompt, line) then return 0 end      -- substring: best group
+				if fzy.has_match(prompt, line) then return 0.5 end  -- fuzzy-only: worse group
+				return -1                                           -- no match: drop
+			end,
+			highlighter = function(_, prompt, display)
+				if prompt ~= "" and fzy.has_match(prompt, display) then
+					return fzy.positions(prompt, display)
+				end
+			end,
+		})
+
+		-- true when `cur` should sort before `existing` (always same group here).
+		local function tiebreak(cur, existing, prompt)
+			if has_substr(prompt, cur.ordinal) then
+				return (cur.index or 0) < (existing.index or 0)  -- file order
+			end
+			return fzy.score(prompt, cur.ordinal) > fzy.score(prompt, existing.ordinal)
+		end
+
+		return sorter, tiebreak
+	end
+
+	map("n", "<leader>fs", function()
+		local sorter, tiebreak = symbols_sorter()
+		builtin.lsp_document_symbols({ sorter = sorter, tiebreak = tiebreak })
+	end, { desc = "Telescope document symbols (substr, then fzy)" })
 end
 
 -- undotree
