@@ -243,6 +243,9 @@ local function bi_generator()
 		key = "g",
 		label = "Generator",
 		value = function()
+			if config.generator then
+				return { config.generator, "Comment" }
+			end
 			return config.generator or "(unset)"
 		end,
 		actions = {
@@ -463,6 +466,10 @@ function build_items()
 		label = function() return "config: " .. vim.inspect(config) end,
 		label_hl = "Comment",
 	}
+	items[#items+1] = {
+		label = function() return "config_preset: " .. vim.inspect(config_preset) end,
+		label_hl = "Comment",
+	}
 	items[#items+1] = { section = "config" }
 
 	items[#items+1] = bi_build_dir()
@@ -496,7 +503,7 @@ end
 package.loaded["cpp.menu"] = nil
 package.loaded["cpp.configure"] = nil
 
---M.menu()
+M.menu()
 --config.build_dir = "asd"
 --config.generator = "Ninja"
 --
@@ -505,12 +512,77 @@ package.loaded["cpp.configure"] = nil
 
 vim.keymap.set("n", "<C-Space>", ":RunLuaBuffer silent<CR>")
 
-local cmake_presets = require("cpp.cmake_presets")
+--local cmake_presets = require("cpp.cmake_presets")
 
 --vim.print(cmake_presets.list("~/t"))
-vim.print(cmake_presets.resolve("~/t", "gcc-debug"))
-
-
-
+--vim.print(cmake_presets.resolve("~/t", "gcc-debug"))
 
 return M
+
+------------------------------------------------------------------------------
+-- TODO: config_preset integration + deduced values (build_dir from compiler
+-- + build_type). Do each phase fully inline (duplicated per-field lookups),
+-- no shared helper, until phase 4 -- abstracting before seeing all three
+-- cases side by side is how you miss a case.
+--
+-- Phase 1 -- layer `generator` inline (easiest, no defines involved, do it
+-- first)
+--   - bi_generator(): inline 2-way lookup by hand: explicit config.generator
+--     (hl "String") -> else config_preset.generator (a "derived" hl) -> else
+--     "(unset)".
+--   - "clear" now only clears the explicit override (config.generator = nil),
+--     which may reveal the preset value underneath instead of going straight
+--     to unset.
+--   - Keep using the hardcoded config_preset test literal -- don't wire up
+--     the real picker yet, just prove the layering logic against the fake
+--     data already in the file.
+--
+-- Phase 2 -- layer defines (build_type + the rest of the union) inline
+--   - bi_defines(items): iterate the *union* of names from config.defines +
+--     config_preset.defines (dedup by name, plain loop + seen[name] table),
+--     so preset-derived defines like CMAKE_CXX_COMPILER actually show up.
+--   - bi_define(define)'s actions get the promote-on-edit behavior (editing
+--     a preset-derived define inserts a new explicit entry copied from the
+--     preset value) and the fall-back-to-preset-derived-on-remove behavior
+--     (removing an explicit define whose name also exists in
+--     config_preset.defines reveals the preset value instead of vanishing)
+--     -- this is the commented-out logic already sitting in bi_define from
+--     cpp.scratch.lua.
+--   - bi_build_type(): same 2-way lookup as generator, but sourced from the
+--     defines union just built (CMAKE_BUILD_TYPE).
+--   - End state: working inline "effective value of compiler"
+--     (CMAKE_CXX_COMPILER/CMAKE_C_COMPILER) and "effective value of
+--     build_type" (CMAKE_BUILD_TYPE) lookups -- both needed before build_dir
+--     can be tackled.
+--
+-- Phase 3 -- layer `build_dir` inline (hardest, now unblocked)
+--   - bi_build_dir()'s value()/value_hl(): explicit config.build_dir -> else
+--     config_preset.build_dir -> else *deduced* from the effective compiler +
+--     effective build_type from phase 2 (call/duplicate that lookup here,
+--     don't share code yet) -> else "(unset)". Three hl tiers this time
+--     (explicit/preset/deduced) instead of two.
+--   - "clear" again only clears the explicit override.
+--
+-- Phase 4 -- only now, extract the common shape
+--   - Compare the three "explicit -> preset -> (maybe deduced) -> unset"
+--     resolutions (generator, build_type, build_dir) and the two
+--     defines-union loops (bi_defines, the compiler/build_type lookups
+--     inside build_dir's deduction). Pull out only what's actually
+--     identical -- likely an effective(config, config_preset, getter) helper
+--     returning (value, source), and a merged_define_names(config,
+--     config_preset) helper.
+--   - Update the three call sites; delete the inline duplicates.
+--
+-- Phase 5 -- wire up the real config_preset (moved last)
+--   - Add bi_preset(): vim.ui.select over cmake_presets.list(root), then
+--     config_preset = cmake_presets.resolve(root, name) or <empty config>.
+--   - root = vim.fn.getcwd() for now.
+--   - Delete the hardcoded config/config_preset test literals and the
+--     vim.print(cmake_presets.resolve(...)) scratch line at the bottom, now
+--     that phases 1-4 were proven against fake data and this swaps in the
+--     real source.
+--
+-- Phase 6 -- cleanup
+--   - Remove leftover notify() debug calls once everything above is
+--     confirmed working end-to-end.
+------------------------------------------------------------------------------
