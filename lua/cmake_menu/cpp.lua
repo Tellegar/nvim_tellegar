@@ -17,6 +17,8 @@
 
 local M = {}
 
+local HL = require("cmake_menu.hl").HL
+
 local FT = { c = true, cpp = true, objc = true, objcpp = true, cuda = true }
 
 local function is_cpp_buf(bufnr)
@@ -275,7 +277,7 @@ local function root_note(root)
 	local text = status == "saved" and "saved"
 		or status == "guessed" and "guessed, not saved"
 		or "no root set"
-	return { { "● ", hl }, { text, "CppMenuHint" } }
+	return { { "● ", hl }, { text, HL.Hint } }
 end
 
 --- vim.ui.select over a cmake param's choices, persisting the pick. `handle`
@@ -369,7 +371,7 @@ local function build_items(root, bufnr, origin_win)
 				if not root then
 					return { { "(none)", "Comment" } }
 				end
-				return { { display_path(root), "CppMenuValue" }, { " ●", status_hl() } }
+				return { { display_path(root), HL.Value }, { " ●", status_hl() } }
 			end,
 			actions = {
 				{ key = "<CR>", desc = "change", close = true, fn = function() pick_manual_root(bufnr, origin_win) end },

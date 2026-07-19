@@ -18,6 +18,7 @@
 
 local M = {}
 local presets = require("cpp.cmake_presets")
+local HL = require("cmake_menu.hl").HL
 
 local function ROOT()
 	return vim.fn.getcwd()
@@ -116,7 +117,7 @@ local function val_hl(source)
 	return source == "config" and "String" or "Comment"
 end
 local function name_hl(source)
-	return source == "config" and "CppMenuLabel" or "Comment"
+	return source == "config" and HL.Label or "Comment"
 end
 
 --- What `cmake` would pick with no -G: it marks its choice with `*` in
