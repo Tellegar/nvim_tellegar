@@ -20,16 +20,6 @@
 
 require("lsp.shrink_unnecessary").setup()
 
--- clangd is started per-project-root (not via the static vim.lsp.enable
--- path) so that multiple C/C++ projects open in different windows/tabs get
--- independent clients with correct --compile-commands-dir each. See cpp.lua,
--- which also owns cwd-syncing for neovim-tasks and the :Cpp menu.
-require("cpp").setup()
-
--- scratch prototype surface for the :Cpp config section (:CppScratch).
--- throwaway - remove once the config-section layout is settled.
-require("cpp.scratch")
-
 -- vim.lsp.config("qmlls", {
 -- 	cmd = {"qmlls", "-E"}
 -- })

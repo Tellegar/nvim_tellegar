@@ -30,6 +30,17 @@ Require("config.callbacks")
 Require("config.options")
 Require("config.lazy")
 
+-- clangd is started per-project-root (not via the static vim.lsp.enable path)
+-- so that multiple C/C++ projects open in different windows/tabs get
+-- independent clients with correct --compile-commands-dir each. Moved out of
+-- lsp/conf.lua (that file is meant to stay lazy-loaded LSP config only) --
+-- commented out mid cpp/ -> cmake_menu rename, require paths are stale.
+-- require("cmake_menu.cpp").setup()
+
+-- scratch prototype surface for the :Cpp config section (:CppScratch).
+-- throwaway - remove once the config-section layout is settled.
+-- require("cmake_menu.scratch")
+
 -- in your init.lua
 local ts_indent = vim.fn["nvim_treesitter#indent"]
 
