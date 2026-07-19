@@ -1,5 +1,5 @@
 -- Throwaway prototype surface for the :Cpp menu's *config section* only.
--- Drives cpp.menu directly with fake state so layouts can be iterated without
+-- Drives cmake_menu.menu directly with fake state so layouts can be iterated without
 -- any cmake / clangd plumbing. Delete once the config-section shape is settled.
 --
 -- TWO-CONFIG MODEL
@@ -14,10 +14,10 @@
 --   or generated).
 --
 -- Points at the current working directory so presets are real.
--- Plain unicode only, same as cpp.menu (no nerd-font glyphs).
+-- Plain unicode only, same as cmake_menu.menu (no nerd-font glyphs).
 
 local M = {}
-local presets = require("cpp.cmake_presets")
+local presets = require("cmake_menu.cmake_presets")
 local HL = require("cmake_menu.hl").HL
 
 local function ROOT()
@@ -228,8 +228,10 @@ local function build_items()
 		table.insert(items, {
 			key = "p",
 			label = "CMake preset",
-			value = function() return config.cmake_preset_name or "(none)" end,
-			value_hl = function() return config.cmake_preset_name and "String" or "Comment" end,
+			value = function()
+				local name = config.cmake_preset_name
+				return { { name or "(none)", name and "String" or "Comment" } }
+			end,
 			actions = {
 				{ key = "x", desc = "clear", fn = clear_preset },
 				{
@@ -367,11 +369,10 @@ local function build_items()
 
 	-- -D cache vars: one row per union name (value/source computed live), then
 	-- an add row. Each row: <CR> edit value, <C-CR> edit name, x remove.
-	table.insert(items, { subsection = "-Defines" })
+	table.insert(items, { label = { { "-Defines", HL.Low } } })
 	for _, name in ipairs(union_define_names()) do
 		table.insert(items, {
-			label = function() return name end,
-			label_hl = function() return name_hl(select(2, eff_define(name))) end,
+			label = function() return { { name, name_hl(select(2, eff_define(name))) } } end,
 			value = function()
 				local v, s = eff_define(name)
 				return { { v or "", val_hl(s) } }
@@ -482,20 +483,12 @@ local function build_items()
 
 	-- Command preview (built from the raw config), one argument (or -B/-G
 	-- pair) per line so it doesn't grow into one huge line - but it's still a
-	-- single selectable entry (menu.lua's `lines`), yanking the full command
+	-- single selectable entry ("\n"s in the label), yanking the full command
 	-- with `y`/`+` regardless of which row it's viewed/clicked on.
 	table.insert(items, { label = "" })
 	-- -B is always present, so the first line always reads "cmake -B ...".
 	table.insert(items, {
-		label = function() return "cmake " .. command_parts()[1] end,
-		label_hl = "Comment",
-		lines = function()
-			local out = {}
-			for i = 2, #command_parts() do
-				out[#out + 1] = command_parts()[i]
-			end
-			return out
-		end,
+		label = function() return { { "cmake " .. table.concat(command_parts(), "\n"), "Comment" } } end,
 		actions = {
 			{
 				key = "y",
@@ -520,7 +513,7 @@ local function build_items()
 end
 
 function M.open(select_key)
-	return require("cpp.menu").open({
+	return require("cmake_menu.menu").open({
 		title = " config scratch ",
 		min_width = 54,
 		items = build_items(),

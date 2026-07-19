@@ -242,7 +242,7 @@ end
 ------------------------------------------------------------------------------
 -- Menu: item specs for the :Cpp floating menu, so :Task/:Cpp params never
 -- need to be typed directly. Rendering, movement, quick-launch keys and the
--- hint bar all live in lua/cpp/menu.lua; this section only describes *what*
+-- hint bar all live in lua/cmake_menu/menu.lua; this section only describes *what*
 -- each entry shows and does.
 ------------------------------------------------------------------------------
 
@@ -396,8 +396,10 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "b",
 			label = "Build",
-			value = function() return cfg.cmake.target or "no target" end,
-			value_hl = function() return cfg.cmake.target and "String" or "Comment" end,
+			value = function()
+				local target = cfg.cmake.target
+				return { { target or "no target", target and "String" or "Comment" } }
+			end,
 			actions = {
 				{
 					key = "<CR>",
@@ -417,7 +419,7 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "B",
 			label = "Rebuild",
-			value = "clean + build",
+			value = { { "clean + build", HL.Value } },
 			actions = {
 				{ key = "<CR>", desc = "rebuild", close = true, fn = function() M.run_task(origin_win, "start cmake rebuild") end },
 			},
@@ -447,8 +449,7 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "K",
 			label = "Build kit",
-			value = function() return cfg.cmake.build_kit end,
-			value_hl = "String",
+			value = function() return cfg.cmake.build_kit and { { cfg.cmake.build_kit, "String" } } end,
 			actions = {
 				{ key = "<CR>", desc = "select kit", fn = function(handle) pick_param(root, "build_kit", handle) end },
 			},
@@ -456,8 +457,7 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "t",
 			label = "Build type",
-			value = function() return cfg.cmake.build_type end,
-			value_hl = "String",
+			value = function() return cfg.cmake.build_type and { { cfg.cmake.build_type, "String" } } end,
 			actions = {
 				{ key = "<CR>", desc = "select type", fn = function(handle) pick_param(root, "build_type", handle) end },
 			},
@@ -500,7 +500,7 @@ function M.open_menu()
 	-- one place that's allowed to say so, since it was invoked deliberately.
 	local root = M.find_root(bufnr)
 
-	require("cpp.menu").open({
+	require("cmake_menu.menu").open({
 		title = " " .. (root and vim.fs.basename(root) or "no project") .. " ",
 		min_width = 46,
 		note = function() return root_note(root) end,

@@ -19,7 +19,7 @@
 -- font ships (─ ▌ ● ↵ →), for terminals that don't render private-use icons.
 --
 -- Usage:
---   local menu = require("cpp.menu")
+--   local menu = require("cmake_menu.menu")
 --   local handle = menu.open(spec)   -- see the spec shape below
 --   -- later, from an action callback or elsewhere:
 --   handle:render()                  -- refresh values in place
@@ -38,13 +38,14 @@
 --       Dismisses the menu, restores the cursor and focus, and runs
 --       spec.on_close. Also bound to q / <Esc> inside the menu.
 --
--- The spec (all text fields accept a value or a function returning one):
+-- The spec. Every text field is a string, a chunk list ({{text, hl}, ...}
+-- where hl is optional per chunk), or a function returning either - plain
+-- strings get the field's default highlight.
 --   {
 --     title    = "Menu",           - window title
 --     min_width = 44,              - lower bound on the window width (optional)
 --     on_close = function() end,   - called once when the menu closes (optional)
---     note     = "text" | function() return {{text, hl}, ...} end,
---                                  - left half of the global footer line
+--     note     = <text>,           - left half of the global footer line
 --     select_key = "d",           - preselect the item whose `key` matches
 --                                    this, instead of the first selectable
 --                                    item (optional; falls back silently if
@@ -54,28 +55,29 @@
 --                                    known entry rather than reset to the top
 --     actions  = { <action>, ... },  - menu-global actions; fire from any entry
 --                                      and shadow a per-item action of same key
---     items    = {
---       { section = "build" },     - group header line, gap above + rule
---       { subsection = "flags" },  - lighter-weight header: no gap above, no
---                                    rule, for subdividing within a section
---       {
---         key      = "b",          - quick-launch key, shown as a left column;
---                                    pressing it anywhere selects this entry and
---                                    runs its <CR> action
---         label    = "Build",
---         value    = "no target" | {{text, hl}, ...},  - right-aligned
---         value_hl = "String",     - hl for plain-string values
---         note     = function() return {{text, hl}, ...} end,
---                                  - left half of the footer line while selected
---         actions  = { <action>, ... },  - ordered; per-entry
---                                  - "\n" in `label` splits it into the label
---                                    row plus full-width continuation rows
---                                    below it, still part of THIS entry: they
---                                    select/highlight/click as one unit (the
---                                    cursor snaps back to the label row), for
---                                    entries whose content doesn't fit one line
---       },
---     },
+--     items    = { <item>, ... },
+--   }
+--
+-- An <item> is one shape; how it renders follows from which fields are set:
+--   {
+--     section = "build",     - group header: gap above, then the text plus a
+--                              "─" rule filling the rest of the line. Default
+--                              hl HL.Low. When set, key/label/value are ignored.
+--     key     = "b",         - quick-launch key, shown as a left column;
+--                              pressing it anywhere selects this entry and
+--                              runs its <CR> action
+--     label   = "Build",     - left-aligned, default hl HL.Normal. "\n"s split
+--                              it into the label row plus full-width
+--                              continuation rows below it, still part of THIS
+--                              entry: they select/highlight/click as one unit
+--                              (the cursor snaps back to the label row), for
+--                              entries whose content doesn't fit one line
+--     value   = "no target", - right-aligned on the label row, default hl
+--                              HL.Normal
+--     note    = <text>,      - left half of the footer line while selected
+--     actions = { <action>, ... },  - ordered; per-entry. An item with actions
+--                              is selectable; one without is skipped over
+--                              (headers, spacers, static text)
 --   }
 --
 -- An <action> is
@@ -103,37 +105,35 @@ local HL = require("cmake_menu.hl").HL
 
 local M = {}
 
----@alias Cpp.MenuChunk { [1]: string, [2]: string? } text + optional highlight group
----@alias Cpp.MenuChunks Cpp.MenuChunk[]
----@alias Cpp.MenuText string|Cpp.MenuChunks
+---@alias CMenu.Chunk { [1]: string, [2]: string? } text + optional highlight group
+---@alias CMenu.Chunks CMenu.Chunk[]
+---@alias CMenu.Text string|CMenu.Chunks
 
----@class Cpp.MenuAction
+---@class CMenu.Action
 ---@field key string normal-mode lhs (<CR>, l, <C-s>); pressing it runs `fn`
 ---@field desc string shown next to `key` in the footer
----@field fn fun(handle: Cpp.MenuHandle) receives the menu handle
+---@field fn fun(handle: CMenu.Handle) receives the menu handle
 ---@field close boolean? close the menu before running `fn` (default: stays open and re-renders)
 ---@field alt_keys string[]? extra lhs's that run the same action but stay out of the footer
 ---@field hidden boolean? keep `key` itself out of the footer while still mapping it
 
 ---@class CMenu.Item
----@field section string? group header line (gap above + rule); not selectable
----@field subsection string? lighter-weight header (no gap, no rule); not selectable
+---@field section CMenu.Text|(fun(): CMenu.Text)|nil group header: gap above + text + rule fill (default hl HL.Low); when set, key/label/value are ignored
 ---@field key string? quick-launch key, shown as a left column
----@field label string|(fun(): string)|nil "\n" splits it into the label row plus full-width continuation
----   rows below it (still part of this entry: they select/highlight/click as one unit, cursor snaps to the label row)
----@field label_hl string|(fun(): string)|nil hl group for `label`, applied to every line it splits into
----@field value Cpp.MenuText|(fun(): Cpp.MenuText)|nil right-aligned, label row only
----@field value_hl string|(fun(): string)|nil hl group used when `value` resolves to a plain string
----@field note Cpp.MenuChunks|(fun(): Cpp.MenuChunks)|nil left half of the footer line while this item is selected
----@field actions Cpp.MenuAction[]? ordered, per-entry
+---@field label CMenu.Text|(fun(): CMenu.Text)|nil left-aligned (default hl HL.Normal); "\n" splits it into the label row
+---   plus full-width continuation rows below it (still part of this entry: they select/highlight/click as one unit,
+---   cursor snaps to the label row)
+---@field value CMenu.Text|(fun(): CMenu.Text)|nil right-aligned, label row only (default hl HL.Normal)
+---@field note CMenu.Text|(fun(): CMenu.Text)|nil left half of the footer line while this item is selected (default hl HL.Low)
+---@field actions CMenu.Action[]? ordered, per-entry; non-nil makes the item selectable
 
----@class Cpp.MenuSpec
+---@class CMenu.Spec
 ---@field title string? window title
 ---@field min_width integer? lower bound on the window width
 ---@field on_close fun()? called once when the menu closes
----@field note Cpp.MenuChunks|(fun(): Cpp.MenuChunks)|nil left half of the global footer line
+---@field note CMenu.Text|(fun(): CMenu.Text)|nil left half of the global footer line (default hl HL.Low)
 ---@field select_key string? preselect the item whose `key` matches this instead of the first selectable item
----@field actions Cpp.MenuAction[]? menu-global actions; fire from any entry, shadow a per-item action of same key
+---@field actions CMenu.Action[]? menu-global actions; fire from any entry, shadow a per-item action of same key
 ---@field items CMenu.Item[]
 
 local ns = api.nvim_create_namespace("cpp_menu")
@@ -153,6 +153,50 @@ local function chunks_width(chunks)
 		w = w + dw(c[1])
 	end
 	return w
+end
+
+--- Flattens a chunk list into its concatenated text plus byte-range highlight
+--- spans ({start_col, end_col, hl}, 0-based, end-exclusive).
+local function flatten(chunks)
+	local text, spans = "", {}
+	for _, c in ipairs(chunks) do
+		if c[2] then
+			spans[#spans + 1] = { #text, #text + #c[1], c[2] }
+		end
+		text = text .. c[1]
+	end
+	return text, spans
+end
+
+--- Normalizes a text field (string | chunks | function returning either) to a
+--- chunk list, plain strings taking `default_hl`; nil stays nil.
+local function text_chunks(v, default_hl)
+	v = resolve(v)
+	if v == nil then
+		return nil
+	end
+	if type(v) == "string" then
+		return { { v, default_hl } }
+	end
+	return v
+end
+
+--- Splits a chunk list on "\n"s inside chunk text into one chunk list per
+--- rendered line (highlights carry across the split).
+local function split_chunk_lines(chunks)
+	local out = { {} }
+	for _, c in ipairs(chunks) do
+		for i, part in ipairs(vim.split(c[1], "\n", { plain = true })) do
+			if i > 1 then
+				out[#out + 1] = {}
+			end
+			if part ~= "" then
+				local line = out[#out]
+				line[#line + 1] = { part, c[2] }
+			end
+		end
+	end
+	return out
 end
 
 -- Pretty forms for action keys in the hint bar; anything else shows verbatim,
@@ -196,18 +240,6 @@ local function key_symbol(key)
 	return prefix .. (KEY_SYMBOLS[rest] or rest:match("^<(.+)>$") or rest)
 end
 
---- Normalizes an item's `value` to a chunk list ({{text, hl}, ...}) or nil.
-local function value_chunks(item)
-	local v = resolve(item.value)
-	if v == nil then
-		return nil
-	end
-	if type(v) == "string" then
-		return { { v, resolve(item.value_hl) or HL.Value } }
-	end
-	return v
-end
-
 -- Footer: two justified lines, each a note flush-left and its keybinds
 -- flush-right with filler between. Line 1 is the selected item's (note +
 -- actions); line 2 is the menu-global one (spec.note + spec.actions + close).
@@ -216,14 +248,7 @@ local FOOTER_GAP = 3 -- minimum space between the note and the keybinds
 
 --- A source's (item or spec) note as chunks, or empty.
 local function note_chunks(source)
-	if not (source and source.note) then
-		return {}
-	end
-	local v = resolve(source.note)
-	if type(v) == "string" then
-		return { { v, HL.Hint } }
-	end
-	return v
+	return source and text_chunks(source.note, HL.Low) or {}
 end
 
 --- Right-hand keybind chunks: one `key desc` pair per action, close appended
@@ -234,8 +259,8 @@ local function keys_chunks(actions, with_close)
 		if #chunks > 0 then
 			chunks[#chunks + 1] = { "  " }
 		end
-		chunks[#chunks + 1] = { key_symbol(key), HL.HintKey }
-		chunks[#chunks + 1] = { " " .. desc, HL.Hint }
+		chunks[#chunks + 1] = { key_symbol(key), HL.Glow }
+		chunks[#chunks + 1] = { " " .. desc, HL.Low }
 	end
 	for _, a in ipairs(actions or {}) do
 		if not a.hidden then
@@ -272,8 +297,8 @@ local function global_footer(spec, width)
 	return footer_line(note_chunks(spec), keys_chunks(spec.actions, true), width)
 end
 
----@class Cpp.MenuHandle
----@field spec Cpp.MenuSpec the spec this menu was opened with
+---@class CMenu.Handle
+---@field spec CMenu.Spec the spec this menu was opened with
 ---@field sel integer index into spec.items of the currently selected entry
 ---@field buf integer menu buffer handle
 ---@field win integer menu floating-window handle
@@ -283,8 +308,8 @@ end
 ---@field augroup integer autocommand group tied to this menu's buffer
 ---@field saved_guicursor string? guicursor value saved while the real cursor is hidden
 ---@field dispatched_key string? the lhs that triggered the action currently running (set just before `fn` runs)
----@field render fun(self: Cpp.MenuHandle) re-resolves every live field and repaints, resizing/recentering if widths changed
----@field close fun(self: Cpp.MenuHandle) dismisses the menu, restores cursor/focus, runs spec.on_close
+---@field render fun(self: CMenu.Handle) re-resolves every live field and repaints, resizing/recentering if widths changed
+---@field close fun(self: CMenu.Handle) dismisses the menu, restores cursor/focus, runs spec.on_close
 local Menu = {}
 Menu.__index = Menu
 
@@ -292,58 +317,47 @@ Menu.__index = Menu
 local current
 
 local function selectable(item)
-	return item and not item.section and item.actions ~= nil and #item.actions > 0
-end
-
---- Splits a resolved label on "\n" into its first (label-row) line and any
---- continuation lines, the latter pre-wrapped as full-width chunk rows
---- indented to align under the label column.
-local function label_lines(it)
-	local text = resolve(it.label) or ""
-	local split = vim.split(text, "\n", { plain = true })
-	local label_hl = resolve(it.label_hl) or HL.Label
-	local extra = {}
-	for i = 2, #split do
-		extra[#extra + 1] = { { "     " }, { split[i], label_hl } }
-	end
-	return split[1], label_hl, extra
+	return item ~= nil and item.actions ~= nil
 end
 
 --- Lays the spec out into buffer lines + highlight spans. Width is computed
 --- over every item line *and* both footer lines, so nothing ever wraps or
 --- truncates as the selection moves.
 function Menu:_build()
-	local items = self.spec.items
+	local spec = self.spec
+	local items = spec.items
 
-	local lefts, values, firsts, first_hls, extras = {}, {}, {}, {}, {}
-	local width = math.max(self.spec.min_width or 44, dw(self.spec.title or "") + 8)
+	-- Pass 1: resolve every live field once and find the width that fits every
+	-- line (entries, continuations and both footers).
+	local prep = {} -- per-item resolved fields, indexed like `items`
+	local width = math.max(spec.min_width or 44, dw(spec.title or "") + 8)
 	for i, it in ipairs(items) do
+		local p = {}
+		prep[i] = p
 		if it.section then
-			width = math.max(width, dw(it.section) + 12)
-		elseif it.subsection then
-			width = math.max(width, dw(it.subsection) + 4)
+			p.section = text_chunks(it.section, HL.Low)
+			width = math.max(width, chunks_width(p.section) + 12)
 		else
-			local first, hl, extra = label_lines(it)
-			firsts[i], first_hls[i], extras[i] = first, hl, extra
-			lefts[i] = "  " .. (it.key or " ") .. "  " .. first
-			values[i] = value_chunks(it)
-			local w = dw(lefts[i]) + (values[i] and (3 + chunks_width(values[i])) or 0)
+			local rows = split_chunk_lines(text_chunks(it.label, HL.Normal) or {})
+			p.label = table.remove(rows, 1)
+			p.extra = rows
+			p.left_w = 5 + chunks_width(p.label) -- "  k  " column + label
+			p.value = text_chunks(it.value, HL.Normal)
+			local w = p.left_w + (p.value and (3 + chunks_width(p.value)) or 0)
 			width = math.max(width, w + 2, footer_width(note_chunks(it), keys_chunks(it.actions, false)))
-			for _, chunks in ipairs(extra) do
-				width = math.max(width, chunks_width(chunks) + 2)
+			for _, row in ipairs(rows) do
+				width = math.max(width, 5 + chunks_width(row) + 2)
 			end
 		end
 	end
-	width = math.max(width, footer_width(note_chunks(self.spec), keys_chunks(self.spec.actions, true)))
+	width = math.max(width, footer_width(note_chunks(spec), keys_chunks(spec.actions, true)))
 
+	-- Pass 2: emit the lines.
 	local lines, spans, row_item, item_row, item_rows = {}, {}, {}, {}, {}
 	local function push(chunks)
-		local row, text = #lines, ""
-		for _, c in ipairs(chunks) do
-			if c[2] then
-				spans[#spans + 1] = { row, #text, #text + #c[1], c[2] }
-			end
-			text = text .. c[1]
+		local text, cols = flatten(chunks)
+		for _, s in ipairs(cols) do
+			spans[#spans + 1] = { #lines, s[1], s[2], s[3] }
 		end
 		lines[#lines + 1] = text
 		return #lines
@@ -351,43 +365,47 @@ function Menu:_build()
 
 	push({ { "" } })
 	for i, it in ipairs(items) do
-		if it.section then
+		local p = prep[i]
+		local chunks
+		if p.section then
 			if #lines > 1 then -- separator gap, unless right after the top padding
 				push({ { "" } })
 			end
-			local rule = string.rep("─", math.max(0, width - 5 - dw(it.section)))
-			push({ { "  " }, { it.section, HL.Section }, { " " }, { rule, HL.Rule } })
-		elseif it.subsection then
-			push({ { "  " }, { it.subsection, HL.Section } })
+			chunks = { { "  " } }
+			vim.list_extend(chunks, p.section)
+			chunks[#chunks + 1] = { " " }
+			chunks[#chunks + 1] = { string.rep("─", math.max(0, width - 5 - chunks_width(p.section))), HL.Rule }
 		else
-			local chunks = {
+			chunks = {
 				{ "  " },
-				it.key and { it.key, HL.Key } or { " " },
+				it.key and { it.key, HL.Glow } or { " " },
 				{ "  " },
-				{ firsts[i], first_hls[i] },
 			}
-			if values[i] then
-				local pad = width - 2 - dw(lefts[i]) - chunks_width(values[i])
+			vim.list_extend(chunks, p.label)
+			if p.value then
+				local pad = width - 2 - p.left_w - chunks_width(p.value)
 				chunks[#chunks + 1] = { string.rep(" ", math.max(pad, 1)) }
-				vim.list_extend(chunks, values[i])
+				vim.list_extend(chunks, p.value)
 			end
-			local row = push(chunks)
-			row_item[row], item_row[i] = i, row
-			item_rows[i] = { row }
-			for _, ln_chunks in ipairs(extras[i] or {}) do
-				-- continuation rows: same item for selection/click, but
-				-- item_row keeps pointing at the label row above (cursor
-				-- always lands there, not mid-block).
-				local ln_row = push(ln_chunks)
-				row_item[ln_row] = i
-				item_rows[i][#item_rows[i] + 1] = ln_row
-			end
+		end
+		local row = push(chunks)
+		row_item[row], item_row[i] = i, row
+		item_rows[i] = { row }
+		for _, extra_row in ipairs(p.extra or {}) do
+			-- continuation rows: same item for selection/click, but
+			-- item_row keeps pointing at the label row above (cursor
+			-- always lands there, not mid-block).
+			local ln = { { "     " } }
+			vim.list_extend(ln, extra_row)
+			local ln_row = push(ln)
+			row_item[ln_row] = i
+			item_rows[i][#item_rows[i] + 1] = ln_row
 		end
 	end
 	push({ { "" } })
 	push({ { " " }, { string.rep("─", width - 2), HL.Rule } })
 	local item_hint_row = push(item_footer(items[self.sel], width))
-	local global_hint_row = push(global_footer(self.spec, width))
+	push(global_footer(spec, width))
 
 	return {
 		lines = lines,
@@ -397,7 +415,6 @@ function Menu:_build()
 		item_rows = item_rows,
 		width = width,
 		item_hint_row = item_hint_row,
-		global_hint_row = global_hint_row,
 	}
 end
 
@@ -428,21 +445,14 @@ function Menu:_set_sel(i)
 	end
 	if row then
 		api.nvim_buf_set_extmark(self.buf, ns_sel, row - 1, 0, {
-			virt_text = { { "▌", HL.Indicator } },
+			virt_text = { { "▌", HL.Glow } },
 			virt_text_pos = "overlay",
 		})
 	end
 
 	-- Rewrite the contextual footer line for the newly selected item; the
 	-- global line below it doesn't depend on the selection, so it stays put.
-	local chunks = item_footer(self.spec.items[self.sel], layout.width)
-	local text, spans = "", {}
-	for _, c in ipairs(chunks) do
-		if c[2] then
-			spans[#spans + 1] = { #text, #text + #c[1], c[2] }
-		end
-		text = text .. c[1]
-	end
+	local text, spans = flatten(item_footer(self.spec.items[self.sel], layout.width))
 	vim.bo[self.buf].modifiable = true
 	api.nvim_buf_set_lines(self.buf, layout.item_hint_row - 1, layout.item_hint_row, false, { text })
 	vim.bo[self.buf].modifiable = false
@@ -530,7 +540,7 @@ end
 function Menu:_hide_cursor()
 	if self.saved_guicursor == nil then
 		self.saved_guicursor = vim.go.guicursor
-		vim.go.guicursor = "a:" .. require("cmake_menu.hl").HiddenCursor
+		vim.go.guicursor = "a:" .. HL.HiddenCursor
 	end
 end
 
@@ -568,8 +578,118 @@ function Menu:close()
 	end
 end
 
----@param spec Cpp.MenuSpec
----@return Cpp.MenuHandle handle
+--- Buffer-local keymaps: movement, close, insert-blockers, the data-defined
+--- action keys, and the quick-launch keys.
+function Menu:_setup_keymaps()
+	local spec = self.spec
+	local opts = { buffer = self.buf, nowait = true, silent = true }
+	local function map(lhs, fn)
+		vim.keymap.set("n", lhs, fn, opts)
+	end
+	local function map_all(lhss, fn)
+		for _, lhs in ipairs(lhss) do
+			map(lhs, fn)
+		end
+	end
+
+	map_all({ "j", "<Down>", "<Tab>" }, function() self:_move(1) end)
+	map_all({ "k", "<Up>", "<S-Tab>" }, function() self:_move(-1) end)
+	map("gg", function() self:_edge(false) end)
+	map("G", function() self:_edge(true) end)
+	map_all({ "q", "<Esc>" }, function() self:close() end)
+	-- Swallow keys that would edit the buffer or beep; the action maps below
+	-- override any of these a spec actually uses.
+	map_all({ "i", "I", "a", "A", "o", "O", "<CR>", "<S-CR>", "<M-CR>" }, function() end)
+
+	-- Actions dispatch through one map per distinct key: a menu-global action
+	-- (spec.actions) wins, else the selected item's action bound to that key.
+	-- alt_keys are extra aliases for the same action, mapped like any other
+	-- key but left out of the footer (keys_chunks only reads a.key).
+	local keys = {} -- every lhs any action answers to
+	local global_by_key = {} -- lhs -> menu-global action
+	local item_by_key = {} -- item index -> lhs -> action
+	local function index(actions, by_key)
+		for _, a in ipairs(actions or {}) do
+			for _, k in ipairs(vim.list_extend({ a.key }, a.alt_keys or {})) do
+				keys[k] = true
+				by_key[k] = a
+			end
+		end
+	end
+	index(spec.actions, global_by_key)
+	for i, it in ipairs(spec.items) do
+		item_by_key[i] = {}
+		index(it.actions, item_by_key[i])
+	end
+	local function dispatch(key)
+		self:_run(global_by_key[key] or item_by_key[self.sel][key], key)
+	end
+	for key in pairs(keys) do
+		map(key, function() dispatch(key) end)
+	end
+	-- Quick-launch: an item's `key` selects it and runs its <CR> action.
+	for i, it in ipairs(spec.items) do
+		if it.key and item_by_key[i]["<CR>"] then
+			map(it.key, function()
+				self:_set_sel(i)
+				dispatch("<CR>")
+			end)
+		end
+	end
+end
+
+--- Autocommands tied to this menu's buffer: selection snapping under mouse
+--- clicks / stray motions, cursor hiding while the menu has focus, and
+--- self-closing when the window goes away.
+function Menu:_setup_autocmds()
+	self.augroup = api.nvim_create_augroup("cpp_menu_" .. self.buf, { clear = true })
+	api.nvim_create_autocmd("CursorMoved", {
+		group = self.augroup,
+		buffer = self.buf,
+		callback = function()
+			if self._syncing or self.closed then
+				return
+			end
+			-- Snap the cursor to the nearest selectable row.
+			local items = self.spec.items
+			local row = api.nvim_win_get_cursor(self.win)[1]
+			local i = self.layout.row_item[row]
+			if not (i and selectable(items[i])) then
+				local best, best_dist
+				for item_i, item_row in pairs(self.layout.item_row) do
+					local dist = math.abs(item_row - row)
+					if selectable(items[item_i]) and (not best_dist or dist < best_dist) then
+						best, best_dist = item_i, dist
+					end
+				end
+				i = best
+			end
+			if i then
+				self:_set_sel(i)
+			end
+		end,
+	})
+	-- The hidden real cursor must come back whenever focus leaves the menu
+	-- (pickers opened from actions, or the menu closing).
+	api.nvim_create_autocmd("BufEnter", {
+		group = self.augroup,
+		buffer = self.buf,
+		callback = function() self:_hide_cursor() end,
+	})
+	api.nvim_create_autocmd("BufLeave", {
+		group = self.augroup,
+		buffer = self.buf,
+		callback = function() self:_restore_cursor() end,
+	})
+	api.nvim_create_autocmd("WinClosed", {
+		group = self.augroup,
+		pattern = tostring(self.win),
+		callback = function() self:close() end,
+	})
+end
+
+---@param spec CMenu.Spec
+---@return CMenu.Handle handle
 function M.open(spec)
 	require("cmake_menu.hl").ensure()
 	if current then
@@ -595,18 +715,18 @@ function M.open(spec)
 	vim.bo[self.buf].swapfile = false
 	vim.bo[self.buf].filetype = "cppmenu"
 
-	self.layout = self:_build()
-	local height = math.min(#self.layout.lines, vim.o.lines - 4)
+	-- Real geometry comes from the first :render() below; nvim_open_win just
+	-- needs something valid to start from.
 	self.win_config = {
 		relative = "editor",
-		width = self.layout.width,
-		height = height,
-		row = math.floor((vim.o.lines - height) / 2),
-		col = math.floor((vim.o.columns - self.layout.width) / 2),
+		width = 1,
+		height = 1,
+		row = 0,
+		col = 0,
 		style = "minimal",
 		border = "rounded",
 		title = spec.title,
-		title_pos = "left",
+		title_pos = spec.title and "left" or nil,
 	}
 	self.win = api.nvim_open_win(self.buf, true, self.win_config)
 	vim.wo[self.win].winhighlight = table.concat({
@@ -618,123 +738,8 @@ function M.open(spec)
 	vim.wo[self.win].scrolloff = 2
 
 	self:render()
-
-	local opts = { buffer = self.buf, nowait = true, silent = true }
-	local function map(lhs, fn)
-		vim.keymap.set("n", lhs, fn, opts)
-	end
-	map("j", function() self:_move(1) end)
-	map("<Down>", function() self:_move(1) end)
-	map("<Tab>", function() self:_move(1) end)
-	map("k", function() self:_move(-1) end)
-	map("<Up>", function() self:_move(-1) end)
-	map("<S-Tab>", function() self:_move(-1) end)
-	map("gg", function() self:_edge(false) end)
-	map("G", function() self:_edge(true) end)
-	map("q", function() self:close() end)
-	map("<Esc>", function() self:close() end)
-	for _, lhs in ipairs({
-		"i", "I", "a", "A", "o", "O",
-		"<CR>", "<S-CR>", "<M-CR>"
-	}) do
-		map(lhs, function() end)
-	end
-
-	-- Actions dispatch through one map per distinct key: a menu-global action
-	-- (spec.actions) wins, else the selected item's action bound to that key.
-	-- alt_keys are extra aliases for the same action, mapped like any other
-	-- key but left out of the footer (keys_chunks only reads a.key).
-	local function action_keys(a)
-		return a.alt_keys and vim.list_extend({ a.key }, a.alt_keys) or { a.key }
-	end
-	local global_by_key = {}
-	for _, a in ipairs(spec.actions or {}) do
-		for _, k in ipairs(action_keys(a)) do
-			global_by_key[k] = a
-		end
-	end
-	local function item_action(it, key)
-		for _, a in ipairs(it and it.actions or {}) do
-			for _, k in ipairs(action_keys(a)) do
-				if k == key then
-					return a
-				end
-			end
-		end
-	end
-	local function dispatch(key)
-		self:_run(global_by_key[key] or item_action(spec.items[self.sel], key), key)
-	end
-	local keys = {}
-	for _, a in ipairs(spec.actions or {}) do
-		for _, k in ipairs(action_keys(a)) do
-			keys[k] = true
-		end
-	end
-	for _, it in ipairs(spec.items) do
-		for _, a in ipairs(it.actions or {}) do
-			for _, k in ipairs(action_keys(a)) do
-				keys[k] = true
-			end
-		end
-	end
-	for key in pairs(keys) do
-		map(key, function() dispatch(key) end)
-	end
--- Quick-launch: an item's `key` selects it and runs its <CR> action.
-	for i, it in ipairs(spec.items) do
-		if it.key and item_action(it, "<CR>") then
-			map(it.key, function()
-				self:_set_sel(i)
-				dispatch("<CR>")
-			end)
-		end
-	end
-
-	self.augroup = api.nvim_create_augroup("cpp_menu_" .. self.buf, { clear = true })
-	-- Keep selection consistent under mouse clicks / stray motions: snap the
-	-- cursor to the nearest selectable row.
-	api.nvim_create_autocmd("CursorMoved", {
-		group = self.augroup,
-		buffer = self.buf,
-		callback = function()
-			if self._syncing or self.closed then
-				return
-			end
-			local row = api.nvim_win_get_cursor(self.win)[1]
-			local i = self.layout.row_item[row]
-			if not (i and selectable(spec.items[i])) then
-				local best, best_dist
-				for item_i, item_row in pairs(self.layout.item_row) do
-					local dist = math.abs(item_row - row)
-					if selectable(spec.items[item_i]) and (not best_dist or dist < best_dist) then
-						best, best_dist = item_i, dist
-					end
-				end
-				i = best
-			end
-			if i then
-				self:_set_sel(i)
-			end
-		end,
-	})
-	-- The hidden real cursor must come back whenever focus leaves the menu
-	-- (pickers opened from `expand`, or the menu closing).
-	api.nvim_create_autocmd("BufEnter", {
-		group = self.augroup,
-		buffer = self.buf,
-		callback = function() self:_hide_cursor() end,
-	})
-	api.nvim_create_autocmd("BufLeave", {
-		group = self.augroup,
-		buffer = self.buf,
-		callback = function() self:_restore_cursor() end,
-	})
-	api.nvim_create_autocmd("WinClosed", {
-		group = self.augroup,
-		pattern = tostring(self.win),
-		callback = function() self:close() end,
-	})
+	self:_setup_keymaps()
+	self:_setup_autocmds()
 	self:_hide_cursor()
 
 	return self
