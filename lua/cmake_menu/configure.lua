@@ -118,6 +118,8 @@ local function notify(msg)
 	)
 end
 
+local HL = require("cmake_menu.hl").HL
+
 ---@type CMake.Config
 local config = {
 	cmake_preset_name = nil,
@@ -181,8 +183,12 @@ local function bi_build_dir()
 		key = "d",
 		label = "Build dir",
 		-- TODO build_dir can be generated/unset/set
-		value = function() return config.build_dir and escape(config.build_dir) or "(unset)" end,
-		value_hl = function() return config.build_dir and "String" or "Comment" end,
+		value = function()
+			if config.build_dir then
+				return { { escape(config.build_dir), "String" } }
+			end
+			return { { "(unset)", "Comment" } }
+		end,
 		actions = {
 			{ key = "x", desc = "clear", fn = function() config.build_dir = nil end },
 			{
@@ -211,7 +217,7 @@ local function bi_build_type()
 		label = "Build type",
 		value = function()
 			local value = define_get(config, "CMAKE_BUILD_TYPE")
-			return value or "(unset)"
+			return { { value or "(unset)", HL.Value } }
 		end,
 		actions = {
 			{ key = "x", desc = "clear", fn = function() define_clear(config, "CMAKE_BUILD_TYPE") end },
@@ -244,9 +250,10 @@ local function bi_generator()
 		label = "Generator",
 		value = function()
 			if config.generator then
-				return { config.generator, "Comment" }
+				return {{ config.generator, HL.Value }}
 			end
-			return config.generator or "(unset)"
+			return {{ "(unset)", "String" }}
+			--return "(unset)"
 		end,
 		actions = {
 			{ key = "x", desc = "clear", fn = function() config.generator = nil end },
@@ -278,7 +285,7 @@ local function bi_define(define)
 
 	return { ---@type CMenu.Item
 		label = function() return name end,
-		value = function() return value end,
+		value = function() return { { value, HL.Value } } end,
 		actions = {
 			{
 				key = "x",
@@ -435,8 +442,7 @@ end
 ---@return CMenu.Item
 local function bi_build_command()
 	return { ---@type CMenu.Item
-		label = function() return table.concat(M.command_parts(config), "\n") end,
-		label_hl = "Comment",
+		label = function() return { { table.concat(M.command_parts(config), "\n"), "Comment" } } end,
 		actions = {
 			{
 				key = "y",
@@ -463,12 +469,10 @@ function build_items()
 	local items = {} ---@type CMenu.Item[]
 
 	items[#items+1] = {
-		label = function() return "config: " .. vim.inspect(config) end,
-		label_hl = "Comment",
+		label = function() return { { "config: " .. vim.inspect(config), "Comment" } } end,
 	}
 	items[#items+1] = {
-		label = function() return "config_preset: " .. vim.inspect(config_preset) end,
-		label_hl = "Comment",
+		label = function() return { { "config_preset: " .. vim.inspect(config_preset), "Comment" } } end,
 	}
 	items[#items+1] = { section = "config" }
 
@@ -476,7 +480,7 @@ function build_items()
 	items[#items+1] = bi_build_type()
 	items[#items+1] = bi_generator()
 
-	items[#items+1] = { subsection = "-Defines" }
+	items[#items+1] = { label = { { "-Defines", HL.Low } } }
 	bi_defines(items)
 	items[#items+1] = bi_add_define()
 
@@ -486,7 +490,7 @@ function build_items()
 	return items
 end
 
----@return Cpp.MenuSpec
+---@return CMenu.Spec
 local function create_spec()
 	return {
 		title = " configure ",
@@ -500,8 +504,9 @@ function M.menu()
 end
 
 -- testing
-package.loaded["cpp.menu"] = nil
-package.loaded["cpp.configure"] = nil
+package.loaded["cmake_menu.hl"] = nil
+package.loaded["cmake_menu.menu"] = nil
+package.loaded["cmake_menu.configure"] = nil
 
 M.menu()
 --config.build_dir = "asd"
@@ -556,7 +561,7 @@ return M
 --     can be tackled.
 --
 -- Phase 3 -- layer `build_dir` inline (hardest, now unblocked)
---   - bi_build_dir()'s value()/value_hl(): explicit config.build_dir -> else
+--   - bi_build_dir()'s value(): explicit config.build_dir -> else
 --     config_preset.build_dir -> else *deduced* from the effective compiler +
 --     effective build_type from phase 2 (call/duplicate that lookup here,
 --     don't share code yet) -> else "(unset)". Three hl tiers this time
