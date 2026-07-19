@@ -9,23 +9,33 @@
 -- Scope: best-effort resolver, enough for the menu. It does NOT evaluate
 -- `condition` blocks (all non-hidden presets are listed); if we ever need
 -- cmake-exact selectability, `cmake --list-presets` is the authoritative set.
+--
+-- TODO: bi_generator()'s hardcoded choices list (configure.lua) should be
+-- replaced by shelling out to `cmake --help` and parsing the "Generators"
+-- section (confirmed it lists the full valid set, `*` marks the default --
+-- see cmake_default_generator() in cpp.scratch for the existing
+-- single-match version of this parse). Watch for: long generator names
+-- wrapping onto their own line with no `=` (e.g. "Sublime Text 2 - Unix
+-- Makefiles", `=` follows on the next line), and no space before `=` for
+-- some entries (e.g. "Eclipse CDT4 - Unix Makefiles="). Also decide
+-- whether to filter out "(deprecated)" generators.
 
 local M = {}
 
 local uv = vim.uv or vim.loop
 local PRESET_FILES = { "CMakePresets.json", "CMakeUserPresets.json" }
 
----@class Cpp.CMakePresetListEntry
+---@class CMake.PresetListEntry
 ---@field name string
 ---@field display string
 
----@class Cpp.CMakePresetRaw
+---@class CMake.PresetRaw
 ---@field generator string?
 ---@field binaryDir string?
 ---@field toolchainFile string?
 ---@field cacheVariables table<string, any>
 
----@class Cpp.CMakePresetMacroCtx
+---@class CMake.PresetMacroCtx
 ---@field sourceDir string
 ---@field sourceParentDir string
 ---@field sourceDirName string
@@ -96,7 +106,7 @@ end
 
 --- Selectable (non-hidden) configure presets: { { name, display }, ... }.
 ---@param root string
----@return Cpp.CMakePresetListEntry[]
+---@return CMake.PresetListEntry[]
 function M.list(root)
 	local out = {}
 	for name, p in pairs(collect(root)) do
@@ -140,7 +150,7 @@ local function cache_value(v)
 end
 
 --- Overlay one preset's raw fields (child) over an accumulator (base).
----@param acc Cpp.CMakePresetRaw
+---@param acc CMake.PresetRaw
 ---@param p table raw preset json object
 local function overlay(acc, p)
 	if p.generator then
@@ -162,7 +172,7 @@ end
 ---@param name string
 ---@param presets table<string, table> raw preset json objects, keyed by name
 ---@param visiting table<string, true> guards inherits cycles
----@return Cpp.CMakePresetRaw
+---@return CMake.PresetRaw
 local function resolve_raw(name, presets, visiting)
 	local p = presets[name]
 	if not p or visiting[name] then
@@ -182,7 +192,7 @@ end
 ---@param root string
 ---@param preset_name string
 ---@param generator string?
----@return Cpp.CMakePresetMacroCtx
+---@return CMake.PresetMacroCtx
 local function macro_ctx(root, preset_name, generator)
 	return {
 		sourceDir = root,
@@ -196,7 +206,7 @@ local function macro_ctx(root, preset_name, generator)
 end
 
 ---@param str string?
----@param ctx Cpp.CMakePresetMacroCtx
+---@param ctx CMake.PresetMacroCtx
 ---@return string?
 local function expand(str, ctx)
 	if type(str) ~= "string" then
