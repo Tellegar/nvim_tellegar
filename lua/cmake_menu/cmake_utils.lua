@@ -228,7 +228,7 @@ end
 --- convention); binaryDir pointing elsewhere is an edge case we ignore for now.
 ---@param root string
 ---@param name string
----@return Cpp.Config? config nil if `name` isn't a known preset
+---@return CMake.Config? config nil if `name` isn't a known preset
 function M.resolve(root, name)
 	local presets = collect(root)
 	if not presets[name] then

@@ -3,17 +3,17 @@
 
 local M = {}
 
----@class Cpp.Define
+---@class CMake.Define
 ---@field name string
 ---@field value string
 
----@class Cpp.Config
+---@class CMake.Config
 ---@field cmake_preset_name string?
 ---@field build_dir string?
 ---@field generator string?
----@field defines Cpp.Define[]
+---@field defines CMake.Define[]
 
----@param config Cpp.Config
+---@param config CMake.Config
 ---@param name string
 ---@return string? value nil if `name` isn't set
 ---@return integer? index nil if `name` isn't set
@@ -25,7 +25,7 @@ local function define_get(config, name)
 	end
 end
 
----@param config Cpp.Config
+---@param config CMake.Config
 ---@param name string
 local function define_clear(config, name)
 	for i, d in ipairs(config.defines) do
@@ -36,7 +36,7 @@ local function define_clear(config, name)
 	end
 end
 
----@param config Cpp.Config
+---@param config CMake.Config
 ---@param name string
 ---@param value string|nil
 local function define_set(config, name, value)
@@ -79,7 +79,7 @@ end
 --- Every dynamic piece (never the fixed flag text) is escaped, since none of
 --- build_dir / preset name / generator / define name+value are guaranteed
 --- shell-safe (e.g. nothing stops a preset name from containing a space).
----@param config Cpp.Config
+---@param config CMake.Config
 ---@return string[]
 function M.command_parts(config)
 	local parts = { "cmake" }
@@ -118,7 +118,7 @@ local function notify(msg)
 	)
 end
 
----@type Cpp.Config
+---@type CMake.Config
 local config = {
 	cmake_preset_name = nil,
 	build_dir = nil,
@@ -126,7 +126,7 @@ local config = {
 	defines = {},
 }
 
----@type Cpp.Config
+---@type CMake.Config
 local config_preset = vim.deepcopy(config)
 
 -- vv testing vv
@@ -162,10 +162,10 @@ local interact = {
 	}
 }
 
----@return Cpp.MenuItem[]
+---@return CMenu.Item[]
 local build_items
 
----@return Cpp.MenuItem
+---@return CMenu.Item
 local function bi_build_dir()
 	local function prompt(default)
 		vim.ui.input(
@@ -177,7 +177,7 @@ local function bi_build_dir()
 		)
 	end
 
-	return { ---@type Cpp.MenuItem
+	return { ---@type CMenu.Item
 		key = "d",
 		label = "Build dir",
 		-- TODO build_dir can be generated/unset/set
@@ -202,11 +202,11 @@ local function bi_build_dir()
 	}
 end
 
----@return Cpp.MenuItem
+---@return CMenu.Item
 local function bi_build_type()
 	-- TODO explore if cmake doesnt expose valid CMAKE_BUILD_TyPE values
 	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
-	return { ---@type Cpp.MenuItem
+	return { ---@type CMenu.Item
 		key = "t",
 		label = "Build type",
 		value = function()
@@ -235,11 +235,11 @@ local function bi_build_type()
 	}
 end
 
----@return Cpp.MenuItem
+---@return CMenu.Item
 local function bi_generator()
-	-- TODO explore if cmake doesnt expose valid -G values
+	-- TODO use cmake_menu.utils to get these options
 	local choices = { "(unset)", "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
-	return { ---@type Cpp.MenuItem
+	return { ---@type CMenu.Item
 		key = "g",
 		label = "Generator",
 		value = function()
@@ -270,13 +270,13 @@ local function bi_generator()
 	}
 end
 
----@return Cpp.MenuItem
----@param define Cpp.Define
+---@return CMenu.Item
+---@param define CMake.Define
 local function bi_define(define)
 	local name, value = define.name, define.value
 	local text = escape(define.name .. "=" .. define.value)
 
-	return { ---@type Cpp.MenuItem
+	return { ---@type CMenu.Item
 		label = function() return name end,
 		value = function() return value end,
 		actions = {
@@ -397,16 +397,16 @@ local function bi_define(define)
 	}
 end
 
----@param items Cpp.MenuItem[]
+---@param items CMenu.Item[]
 local function bi_defines(items)
 	for _, define in ipairs(config.defines) do
 		items[#items+1] = bi_define(define)
 	end
 end
 
----@return Cpp.MenuItem
+---@return CMenu.Item
 local function bi_add_define()
-	return { ---@type Cpp.MenuItem
+	return { ---@type CMenu.Item
 		key = "D",
 		label = "Add -Define",
 		actions = {
@@ -432,9 +432,9 @@ local function bi_add_define()
 	}
 end
 
----@return Cpp.MenuItem
+---@return CMenu.Item
 local function bi_build_command()
-	return { ---@type Cpp.MenuItem
+	return { ---@type CMenu.Item
 		label = function() return table.concat(M.command_parts(config), "\n") end,
 		label_hl = "Comment",
 		actions = {
@@ -458,9 +458,9 @@ local function bi_build_command()
 	}
 end
 
----@return Cpp.MenuItem[]
+---@return CMenu.Item[]
 function build_items()
-	local items = {} ---@type Cpp.MenuItem[]
+	local items = {} ---@type CMenu.Item[]
 
 	items[#items+1] = {
 		label = function() return "config: " .. vim.inspect(config) end,
@@ -496,7 +496,7 @@ local function create_spec()
 end
 
 function M.menu()
-	return require("cpp.menu").open(create_spec())
+	return require("cmake_menu.menu").open(create_spec())
 end
 
 -- testing
@@ -512,7 +512,7 @@ M.menu()
 
 vim.keymap.set("n", "<C-Space>", ":RunLuaBuffer silent<CR>")
 
---local cmake_presets = require("cpp.cmake_presets")
+--local cmake_presets = require("cmake_menu.cmake_presets")
 
 --vim.print(cmake_presets.list("~/t"))
 --vim.print(cmake_presets.resolve("~/t", "gcc-debug"))
