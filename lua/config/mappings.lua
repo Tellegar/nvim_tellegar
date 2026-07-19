@@ -148,6 +148,7 @@ map("n", "<C-k>", vim.lsp.buf.signature_help, { desc = "vim.lsp.buf.signature_he
 map("i", "<C-k>", vim.lsp.buf.signature_help, { desc = "vim.lsp.buf.signature_help" })
 map("n", "]d", function() vim.diagnostic.jump{count= 1, float=true} end, { desc = "jump to next diagnostic" })
 map("n", "[d", function() vim.diagnostic.jump{count=-1, float=true} end, { desc = "jump to prev diagnostic" })
+map("n", "<C-l>", "<cmd>ToggleInlayHints<CR>", { desc = "toggle inlay hints" })
 
 -- global + one-shot: bufstates falls back to globalstate via metatable, so this
 -- covers buffers whose LSP client attaches later too - no need for a per-attach call.
