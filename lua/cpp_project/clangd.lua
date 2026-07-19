@@ -1,0 +1,26 @@
+-- clangd client lifecycle, independent of any UI.
+--
+-- One real client per project root, via vim.lsp.start() (not the static
+-- vim.lsp.enable path), so multiple C/C++ projects open in different
+-- windows/tabs of one nvim instance get independent clangd clients with
+-- correct --compile-commands-dir each, instead of sharing/clobbering one.
+--
+-- Exposes starting a client for a (bufnr, root) pair, and restarting every
+-- client attached to a given root - reloading every buffer that was
+-- actually attached, not just the current one, so diagnostics come back
+-- everywhere. Also owns patching neovim-tasks' cmake_utils.reconfigureClangd
+-- hook so a ":Task ... cmake configure" restarts clangd only for the root
+-- that was just configured, not every clangd client alive.
+--
+-- Consumers, not owners: the FileType c/cpp/objc/objcpp/cuda autocmd (start,
+-- on first attach, using cpp_project.find_root's answer) and cmake_menu
+-- (restart, after the user re-picks a project root from the UI because it
+-- detected the wrong one, or via the menu's "Restart clangd" action).
+-- Neither should reimplement any of this - they call in here.
+--
+-- Split out of the old lua/cpp.lua (now lua/cmake_menu/cpp.lua), which used
+-- to own root detection, clangd lifecycle, and the menu all in one file.
+--
+-- TODO: not yet implemented - lua/cmake_menu/cpp.lua still has the real
+-- logic (clangd_cmd_for, start_clangd, restart_clangd, patch_cmake_utils)
+-- pending extraction into this file.

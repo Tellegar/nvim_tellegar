@@ -1,0 +1,22 @@
+-- Project root detection for C/C++ buffers, independent of any UI.
+--
+-- Given a buffer, answers "what project does this belong to" in priority
+-- order: this session's manual override, then a saved/known root, then
+-- marker-sniffing (.git, CMakePresets.json, build/) from most to least
+-- reliable. Owns the known/session root stores (known_projects persisted
+-- under stdpath("state"), session_roots in-memory only) and neovim-tasks'
+-- cwd-sync (window-local :lcd per project root, never global :cd, so
+-- multiple projects can stay open in different windows/tabs of one nvim
+-- instance without clobbering each other).
+--
+-- Consumers, not owners: the FileType c/cpp/objc/objcpp/cuda autocmd (to
+-- hand cpp_project.clangd the right root to start in) and cmake_menu (to
+-- display/re-pick the current root). Neither should reimplement any of
+-- this - they call in here.
+--
+-- Split out of the old lua/cpp.lua (now lua/cmake_menu/cpp.lua), which used
+-- to own root detection, clangd lifecycle, and the menu all in one file.
+--
+-- TODO: not yet implemented - lua/cmake_menu/cpp.lua still has the real
+-- logic (find_root, known_projects/session_roots, persist_root,
+-- patch_project_config, sync_cwd) pending extraction into this file.
