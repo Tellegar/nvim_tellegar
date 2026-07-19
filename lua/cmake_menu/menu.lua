@@ -97,6 +97,10 @@
 
 local api = vim.api
 
+-- Just the group-name table; M.open() requires cmake_menu.hl again directly
+-- where it actually needs to call .ensure().
+local HL = require("cmake_menu.hl").HL
+
 local M = {}
 
 ---@alias Cpp.MenuChunk { [1]: string, [2]: string? } text + optional highlight group
@@ -111,7 +115,7 @@ local M = {}
 ---@field alt_keys string[]? extra lhs's that run the same action but stay out of the footer
 ---@field hidden boolean? keep `key` itself out of the footer while still mapping it
 
----@class Cpp.MenuItem
+---@class CMenu.Item
 ---@field section string? group header line (gap above + rule); not selectable
 ---@field subsection string? lighter-weight header (no gap, no rule); not selectable
 ---@field key string? quick-launch key, shown as a left column
@@ -130,56 +134,10 @@ local M = {}
 ---@field note Cpp.MenuChunks|(fun(): Cpp.MenuChunks)|nil left half of the global footer line
 ---@field select_key string? preselect the item whose `key` matches this instead of the first selectable item
 ---@field actions Cpp.MenuAction[]? menu-global actions; fire from any entry, shadow a per-item action of same key
----@field items Cpp.MenuItem[]
+---@field items CMenu.Item[]
 
 local ns = api.nvim_create_namespace("cpp_menu")
 local ns_sel = api.nvim_create_namespace("cpp_menu_sel")
-
--- All colors route through CppMenu* groups, default-linked so a colorscheme
--- can restyle the menu without touching this file.
-local HLS = {
-	CppMenuNormal = "NormalFloat",
-	CppMenuBorder = "FloatBorder",
-	CppMenuSelected = "CursorLine",
-	CppMenuIndicator = "Special",
-	CppMenuKey = "Special",
-	CppMenuValue = "Comment",
-	CppMenuSection = "Comment",
-	CppMenuRule = "NonText",
-	CppMenuHint = "Comment",
-	CppMenuHintKey = "Special",
-}
-
--- These two sit on top of the window/float background (the title bar, and
--- any label with no label_hl override). A plain `link` would also pull in
--- the target's own bg - and many themes set an explicit guibg on Normal /
--- FloatTitle for solid-background floats - which then mismatches
--- CppMenuNormal's bg and shows as a boxed highlight behind the text. Fg-only
--- so the window's own background shows through instead.
-local FG_ONLY_HLS = {
-	CppMenuTitle = "FloatTitle",
-	CppMenuLabel = "Normal",
-}
-
-local function ensure_hl()
-	for name, link in pairs(HLS) do
-		api.nvim_set_hl(0, name, { link = link, default = true })
-	end
-	-- CppMenuLabel paints over buffer content, already based to CppMenuNormal
-	-- (winhighlight), so an unset bg there falls through correctly. Title is
-	-- window furniture, not buffer content - an unset bg on it falls back to
-	-- the *global* Normal instead of the float's NormalFloat, so it needs the
-	-- float's bg spelled out explicitly to actually match.
-	local win_bg = api.nvim_get_hl(0, { name = "NormalFloat", link = false }).bg
-	for name, link in pairs(FG_ONLY_HLS) do
-		local resolved = api.nvim_get_hl(0, { name = link, link = false })
-		api.nvim_set_hl(0, name, { fg = resolved.fg, bg = win_bg, default = true })
-	end
-	-- blend = 100 makes the real cursor invisible while it sits in the menu
-	-- (the ▌ indicator plays that role instead); not default = true, since
-	-- this one must win over anything a colorscheme defines.
-	api.nvim_set_hl(0, "CppMenuHiddenCursor", { blend = 100, nocombine = true })
-end
 
 local function resolve(v)
 	return type(v) == "function" and v() or v
@@ -245,7 +203,7 @@ local function value_chunks(item)
 		return nil
 	end
 	if type(v) == "string" then
-		return { { v, resolve(item.value_hl) or "CppMenuValue" } }
+		return { { v, resolve(item.value_hl) or HL.Value } }
 	end
 	return v
 end
@@ -263,7 +221,7 @@ local function note_chunks(source)
 	end
 	local v = resolve(source.note)
 	if type(v) == "string" then
-		return { { v, "CppMenuHint" } }
+		return { { v, HL.Hint } }
 	end
 	return v
 end
@@ -276,8 +234,8 @@ local function keys_chunks(actions, with_close)
 		if #chunks > 0 then
 			chunks[#chunks + 1] = { "  " }
 		end
-		chunks[#chunks + 1] = { key_symbol(key), "CppMenuHintKey" }
-		chunks[#chunks + 1] = { " " .. desc, "CppMenuHint" }
+		chunks[#chunks + 1] = { key_symbol(key), HL.HintKey }
+		chunks[#chunks + 1] = { " " .. desc, HL.Hint }
 	end
 	for _, a in ipairs(actions or {}) do
 		if not a.hidden then
@@ -343,12 +301,12 @@ end
 local function label_lines(it)
 	local text = resolve(it.label) or ""
 	local split = vim.split(text, "\n", { plain = true })
-	local hl = resolve(it.label_hl) or "CppMenuLabel"
+	local label_hl = resolve(it.label_hl) or HL.Label
 	local extra = {}
 	for i = 2, #split do
-		extra[#extra + 1] = { { "     " }, { split[i], hl } }
+		extra[#extra + 1] = { { "     " }, { split[i], label_hl } }
 	end
-	return split[1], hl, extra
+	return split[1], label_hl, extra
 end
 
 --- Lays the spec out into buffer lines + highlight spans. Width is computed
@@ -398,13 +356,13 @@ function Menu:_build()
 				push({ { "" } })
 			end
 			local rule = string.rep("─", math.max(0, width - 5 - dw(it.section)))
-			push({ { "  " }, { it.section, "CppMenuSection" }, { " " }, { rule, "CppMenuRule" } })
+			push({ { "  " }, { it.section, HL.Section }, { " " }, { rule, HL.Rule } })
 		elseif it.subsection then
-			push({ { "  " }, { it.subsection, "CppMenuSection" } })
+			push({ { "  " }, { it.subsection, HL.Section } })
 		else
 			local chunks = {
 				{ "  " },
-				it.key and { it.key, "CppMenuKey" } or { " " },
+				it.key and { it.key, HL.Key } or { " " },
 				{ "  " },
 				{ firsts[i], first_hls[i] },
 			}
@@ -427,7 +385,7 @@ function Menu:_build()
 		end
 	end
 	push({ { "" } })
-	push({ { " " }, { string.rep("─", width - 2), "CppMenuRule" } })
+	push({ { " " }, { string.rep("─", width - 2), HL.Rule } })
 	local item_hint_row = push(item_footer(items[self.sel], width))
 	local global_hint_row = push(global_footer(self.spec, width))
 
@@ -465,12 +423,12 @@ function Menu:_set_sel(i)
 	-- up a single row, so the block is painted manually via extmarks instead.
 	for _, r in ipairs(layout.item_rows[i] or {}) do
 		api.nvim_buf_set_extmark(self.buf, ns_sel, r - 1, 0, {
-			line_hl_group = "CppMenuSelected",
+			line_hl_group = HL.Selected,
 		})
 	end
 	if row then
 		api.nvim_buf_set_extmark(self.buf, ns_sel, row - 1, 0, {
-			virt_text = { { "▌", "CppMenuIndicator" } },
+			virt_text = { { "▌", HL.Indicator } },
 			virt_text_pos = "overlay",
 		})
 	end
@@ -572,7 +530,7 @@ end
 function Menu:_hide_cursor()
 	if self.saved_guicursor == nil then
 		self.saved_guicursor = vim.go.guicursor
-		vim.go.guicursor = "a:CppMenuHiddenCursor"
+		vim.go.guicursor = "a:" .. require("cmake_menu.hl").HiddenCursor
 	end
 end
 
@@ -613,7 +571,7 @@ end
 ---@param spec Cpp.MenuSpec
 ---@return Cpp.MenuHandle handle
 function M.open(spec)
-	ensure_hl()
+	require("cmake_menu.hl").ensure()
 	if current then
 		current:close()
 	end
@@ -652,9 +610,9 @@ function M.open(spec)
 	}
 	self.win = api.nvim_open_win(self.buf, true, self.win_config)
 	vim.wo[self.win].winhighlight = table.concat({
-		"NormalFloat:CppMenuNormal",
-		"FloatBorder:CppMenuBorder",
-		"FloatTitle:CppMenuTitle",
+		"NormalFloat:" .. HL.Normal,
+		"FloatBorder:" .. HL.Border,
+		"FloatTitle:" .. HL.Title,
 	}, ",")
 	vim.wo[self.win].wrap = false
 	vim.wo[self.win].scrolloff = 2
