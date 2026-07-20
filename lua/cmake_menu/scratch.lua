@@ -260,9 +260,12 @@ local function build_items()
 		value = function()
 			local v, s = build_dir_eff()
 			if s == "generated" then
-				return { { v, "Comment" }, { " (generated)", "NonText" } }
+				return {
+					{ text = v, highlight = "Comment" },
+					{ text = " (generated)", highlight = "NonText" },
+				}
 			end
-			return { { v, val_hl(s) } }
+			return { text = v, highlight = val_hl(s) }
 		end,
 		actions = {
 			{ key = "x", desc = "clear", fn = function(h) config.build_dir = nil; h:render() end },
@@ -288,7 +291,7 @@ local function build_items()
 		label = "Build type",
 		value = function()
 			local v, s = eff_define("CMAKE_BUILD_TYPE")
-			return v and { { v, val_hl(s) } } or { { "None (unset)", "Comment" } }
+			return v and { text = v, highlight = val_hl(s) } or { text = "None (unset)", highlight = "Comment" }
 		end,
 		actions = {
 			{
@@ -337,13 +340,16 @@ local function build_items()
 		value = function()
 			local v, s = eff_scalar("generator")
 			if v then
-				return { { v, val_hl(s) } }
+				return { text = v, highlight = val_hl(s) }
 			end
 			local default = cmake_default_generator()
 			if default then
-				return { { default, "Comment" }, { " (unset)", "NonText" } }
+				return {
+					{ text = default, highlight = "Comment" },
+					{ text = " (unset)", highlight = "NonText" },
+				}
 			end
-			return { { "(unset)", "Comment" } }
+			return { text = "(unset)", highlight = "Comment" }
 		end,
 		actions = {
 			{ key = "x", desc = "clear", fn = function(h) config.generator = nil; h:render() end },
@@ -369,7 +375,7 @@ local function build_items()
 
 	-- -D cache vars: one row per union name (value/source computed live), then
 	-- an add row. Each row: <CR> edit value, <C-CR> edit name, x remove.
-	table.insert(items, { label = { { "-Defines", HL.Low } } })
+	table.insert(items, { label = { text = "-Defines", highlight = HL.Low } })
 	for _, name in ipairs(union_define_names()) do
 		table.insert(items, {
 			label = function() return { { name, name_hl(select(2, eff_define(name))) } } end,
@@ -488,7 +494,7 @@ local function build_items()
 	table.insert(items, { label = "" })
 	-- -B is always present, so the first line always reads "cmake -B ...".
 	table.insert(items, {
-		label = function() return { { "cmake " .. table.concat(command_parts(), "\n"), "Comment" } } end,
+		label = function() return { text = "cmake " .. table.concat(command_parts(), "\n"), highlight = "Comment" } end,
 		actions = {
 			{
 				key = "y",

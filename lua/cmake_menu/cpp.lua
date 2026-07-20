@@ -277,7 +277,7 @@ local function root_note(root)
 	local text = status == "saved" and "saved"
 		or status == "guessed" and "guessed, not saved"
 		or "no root set"
-	return { { "● ", hl }, { text, HL.Hint } }
+	return { { text = "● ", highlight = hl }, { text = text, highlight = HL.Hint } }
 end
 
 --- vim.ui.select over a cmake param's choices, persisting the pick. `handle`
@@ -369,9 +369,12 @@ local function build_items(root, bufnr, origin_win)
 			label = "Project root",
 			value = function()
 				if not root then
-					return { { "(none)", "Comment" } }
+					return { text = "(none)", highlight = "Comment" }
 				end
-				return { { display_path(root), HL.Value }, { " ●", status_hl() } }
+				return {
+					{ text = display_path(root), highlight = HL.Value },
+					{ text = " ●", highlight = status_hl() },
+				}
 			end,
 			actions = {
 				{ key = "<CR>", desc = "change", close = true, fn = function() pick_manual_root(bufnr, origin_win) end },
@@ -419,7 +422,7 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "B",
 			label = "Rebuild",
-			value = { { "clean + build", HL.Value } },
+			value = { text = "clean + build", highlight = HL.Value },
 			actions = {
 				{ key = "<CR>", desc = "rebuild", close = true, fn = function() M.run_task(origin_win, "start cmake rebuild") end },
 			},
@@ -449,7 +452,7 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "K",
 			label = "Build kit",
-			value = function() return cfg.cmake.build_kit and { { cfg.cmake.build_kit, "String" } } end,
+			value = function() return cfg.cmake.build_kit and { text = cfg.cmake.build_kit, highlight = "String" } end,
 			actions = {
 				{ key = "<CR>", desc = "select kit", fn = function(handle) pick_param(root, "build_kit", handle) end },
 			},
@@ -457,7 +460,7 @@ local function build_items(root, bufnr, origin_win)
 		{
 			key = "t",
 			label = "Build type",
-			value = function() return cfg.cmake.build_type and { { cfg.cmake.build_type, "String" } } end,
+			value = function() return cfg.cmake.build_type and { text = cfg.cmake.build_type, highlight = "String" } end,
 			actions = {
 				{ key = "<CR>", desc = "select type", fn = function(handle) pick_param(root, "build_type", handle) end },
 			},

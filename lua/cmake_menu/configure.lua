@@ -185,9 +185,9 @@ local function bi_build_dir()
 		-- TODO build_dir can be generated/unset/set
 		value = function()
 			if config.build_dir then
-				return { { escape(config.build_dir), "String" } }
+				return escape(config.build_dir)
 			end
-			return { { "(unset)", "Comment" } }
+			return "(unset)"
 		end,
 		actions = {
 			{ key = "x", desc = "clear", fn = function() config.build_dir = nil end },
@@ -217,7 +217,7 @@ local function bi_build_type()
 		label = "Build type",
 		value = function()
 			local value = define_get(config, "CMAKE_BUILD_TYPE")
-			return { { value or "(unset)", HL.Value } }
+			return { text = value or "(unset)", highlight = HL.Value }
 		end,
 		actions = {
 			{ key = "x", desc = "clear", fn = function() define_clear(config, "CMAKE_BUILD_TYPE") end },
@@ -250,9 +250,9 @@ local function bi_generator()
 		label = "Generator",
 		value = function()
 			if config.generator then
-				return {{ config.generator, HL.Value }}
+				return { text = config.generator, highlight = HL.Value }
 			end
-			return {{ "(unset)", "String" }}
+			return { text = "(unset)", highlight = "String" }
 			--return "(unset)"
 		end,
 		actions = {
@@ -285,7 +285,7 @@ local function bi_define(define)
 
 	return { ---@type CMenu.Item
 		label = function() return name end,
-		value = function() return { { value, HL.Value } } end,
+		value = function() return { text = value, highlight = HL.Value } end,
 		actions = {
 			{
 				key = "x",
@@ -442,7 +442,7 @@ end
 ---@return CMenu.Item
 local function bi_build_command()
 	return { ---@type CMenu.Item
-		label = function() return { { table.concat(M.command_parts(config), "\n"), "Comment" } } end,
+		label = function() return { text = table.concat(M.command_parts(config), "\n"), highlight = "Comment" } end,
 		actions = {
 			{
 				key = "y",
@@ -469,10 +469,10 @@ function build_items()
 	local items = {} ---@type CMenu.Item[]
 
 	items[#items+1] = {
-		label = function() return { { "config: " .. vim.inspect(config), "Comment" } } end,
+		label = function() return { text = "config: " .. vim.inspect(config), highlight = "Comment" } end,
 	}
 	items[#items+1] = {
-		label = function() return { { "config_preset: " .. vim.inspect(config_preset), "Comment" } } end,
+		label = function() return { text = "config_preset: " .. vim.inspect(config_preset), highlight = "Comment" } end,
 	}
 	items[#items+1] = { section = "config" }
 
@@ -480,7 +480,7 @@ function build_items()
 	items[#items+1] = bi_build_type()
 	items[#items+1] = bi_generator()
 
-	items[#items+1] = { label = { { "-Defines", HL.Low } } }
+	items[#items+1] = { label = { text = "-Defines", highlight = HL.Low } }
 	bi_defines(items)
 	items[#items+1] = bi_add_define()
 
