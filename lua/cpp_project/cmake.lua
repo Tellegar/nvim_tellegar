@@ -1,4 +1,5 @@
--- Queries for the cmake binary itself, independent of any UI.
+-- Queries for the cmake binary itself, and cmake command-building utilities,
+-- independent of any UI.
 --
 -- Two things that "valid choices" means for cmake, in different senses:
 -- build types aren't a fixed enum cmake enforces (CMAKE_BUILD_TYPE is a
@@ -7,6 +8,10 @@
 -- hand, vary by platform and cmake build - `cmake --help` reports exactly
 -- what this machine's cmake can hand to -G right now - so that list comes
 -- from parsing its output.
+--
+-- CMake.Config/CMake.Define and the command_parts/command builders also
+-- live here rather than in cmake_menu, since turning a config into an
+-- actual cmake invocation is UI-independent too.
 
 local M = {}
 
@@ -81,6 +86,61 @@ function M.generators(on_done)
 		vim.schedule(function() on_done(generators) end)
 	end)
 end
+
+---@class CMake.Config
+---@field cmake_preset_name string?
+---@field build_dir string?
+---@field generator string?
+---@field defines CMake.Define[]
+
+---@class CMake.Define
+---@field name string
+---@field value string
+
+-- POSIX-shell quoting (sh/bash/zsh single-quote escaping) - not Windows-safe.
+local function escape(str)
+	if str:match("^[%w%-%.,_/:=]+$") then
+		return str
+	end
+	return "'" .. str:gsub("'", "'\\''") .. "'"
+end
+
+--- Argument parts of the cmake configure command implied by `config`, one
+--- entry per -B/--preset/-G/-D. The first entry carries the "cmake" prefix.
+--- Every dynamic piece (never the fixed flag text) is escaped, since none of
+--- build_dir / preset name / generator / define name+value are guaranteed
+--- shell-safe (e.g. nothing stops a preset name from containing a space).
+---@param config CMake.Config
+---@return string[]
+function M.command_parts(config)
+	local parts = { "cmake" }
+
+	local prefix = "build/"
+	local build_dir = config.build_dir and prefix .. config.build_dir or "build"
+	parts[1] = parts[1] .. " -B " .. escape(build_dir)
+
+	if config.cmake_preset_name then
+		parts[#parts + 1] = "--preset " .. escape(config.cmake_preset_name)
+	end
+	if config.generator then
+		parts[#parts + 1] = "-G " .. escape(config.generator)
+	end
+	for _, d in ipairs(config.defines) do
+		parts[#parts + 1] = escape("-D" .. d.name .. "=" .. d.value)
+	end
+
+	return parts
+end
+
+--- @param config CMake.Config
+--- @return string
+function M.command(config)
+	return table.concat(M.command_parts(config), " ")
+end
+
+----------------------------------------------------------------------------------------------------
+-- require runtime
+----------------------------------------------------------------------------------------------------
 
 M.generators(function (generators)
 	local out_with_flag = {}

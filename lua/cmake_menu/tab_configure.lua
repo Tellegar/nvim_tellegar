@@ -7,9 +7,22 @@
 local float = require("cmake_menu.float")
 local tabs = require("cmake_menu.tabs")
 
+local cmake_utils = require("cpp_project.cmake")
+
 local CURRENT = "Configure" -- this tab's identity in cmake_menu.tabs
 
 local M = {}
+
+---@type CMake.Config
+local config = {
+	build_dir = "build/Debug",
+	generator = "Ninja",
+	defines = {
+		{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" },
+		{ name = "CMAKE_C_COMPILER",              value = "gcc" },
+		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
+	},
+}
 
 local function render(m)
 	tabs.render(m.header, CURRENT)
