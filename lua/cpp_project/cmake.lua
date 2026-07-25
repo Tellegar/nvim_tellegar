@@ -21,6 +21,10 @@ M.BUILD_TYPES = { "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
 -- ignores deprecated, bubbles flag != nil to the back
 M.GENERATORS = {}
 
+----------------------------------------------------------------------------------------------------
+-- parse `cmake --help` for -G options
+----------------------------------------------------------------------------------------------------
+
 ---@class CMake.Generator
 ---@field name string
 ---@field default boolean          -- this is the "* marks default" entry
@@ -87,9 +91,13 @@ function M.generators(on_done)
 	end)
 end
 
+----------------------------------------------------------------------------------------------------
+-- CMake.Config utilities
+----------------------------------------------------------------------------------------------------
+
 ---@class CMake.Config
 ---@field cmake_preset_name string?
----@field build_dir string?
+---@field build_dir string? -- nil is equivalent to "build"
 ---@field generator string?
 ---@field defines CMake.Define[]
 
