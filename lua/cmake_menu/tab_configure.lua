@@ -36,10 +36,14 @@ local function render(m)
 
 	-- body
 	local b = m.body
-	local w = b:width()
+	local MARGIN = "  " -- 2-space gutter kept clear on both edges
+	local w = b:width() - 2 * #MARGIN
 	local lines, marks = {}, {}
-	local function push(text) lines[#lines + 1] = text; return #lines - 1 end
-	local function hl(row, col, opts) marks[#marks + 1] = { row, col, opts } end
+	local function push(text) lines[#lines + 1] = MARGIN .. text .. MARGIN; return #lines - 1 end
+	local function hl(row, col, opts)
+		opts.end_col = opts.end_col + #MARGIN
+		marks[#marks + 1] = { row, col + #MARGIN, opts }
+	end
 
 	-- "name        value" field row, value right-aligned to the window edge
 	local function field(name, value)
