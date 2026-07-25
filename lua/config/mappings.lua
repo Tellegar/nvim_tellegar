@@ -12,7 +12,7 @@ local test_file = vim.fn.stdpath("config") .. "/lua/cmake_menu/test.lua"
 map("n", "<C-Space>", "<cmd>source " .. test_file .. "<CR>", { desc = "cmake_menu: test" })
 map("n", "<C-S-Space>", function()
 	for name in pairs(package.loaded) do
-		if name:match("^cmake_menu") then
+		if name:match("^cmake_menu") or name:match("^cpp_project") then
 			package.loaded[name] = nil
 		end
 	end -- reload all cmake_menu modules

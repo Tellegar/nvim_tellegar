@@ -4,10 +4,9 @@
 --- body: right-aligned editable values, a -D defines list, an "add" action, and
 --- a multi-line command preview. Nothing here is wired to real cmake yet.
 
+local cmake = require("cpp_project.cmake")
 local float = require("cmake_menu.float")
 local tabs = require("cmake_menu.tabs")
-
-local cmake_utils = require("cpp_project.cmake")
 
 local CURRENT = "Configure" -- this tab's identity in cmake_menu.tabs
 
@@ -23,6 +22,32 @@ local config = {
 		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
 	},
 }
+
+--- Multi-line command preview (one logical entry, dimmed). Continuation
+--- lines (all but the first) get a 2-space indent; every line but the last
+--- gets a trailing " \" continuation marker, column-aligned so the backslash
+--- lines end flush with where the (backslash-less) last line's text ends.
+---@param push fun(text: string): integer
+---@param hl fun(row: integer, col: integer, opts: table)
+local function render_command_preview(push, hl)
+	local parts = cmake.command_parts(config)
+
+	local lines = {}
+	local max_len = 0
+	for i, part in ipairs(parts) do
+		local l = i > 1 and "  " .. part or part
+		lines[i] = l
+		max_len = math.max(max_len, i == #parts and #l - 2 or #l)
+	end
+
+	for i, l in ipairs(lines) do
+		if i < #lines then
+			l = l .. string.rep(" ", max_len - #l) .. " \\"
+		end
+		local row = push(l)
+		hl(row, 0, { end_col = #l, hl_group = "CMenuDim" })
+	end
+end
 
 local function render(m)
 	tabs.render(m.header, CURRENT)
@@ -71,16 +96,7 @@ local function render(m)
 
 	push("")
 
-	-- multi-line command preview (one logical entry, dimmed)
-	for _, l in ipairs({
-		"cmake -B build/Debug \\",
-		"  -S . -G Ninja \\",
-		"  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \\",
-		"  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++",
-	}) do
-		local row = push(l)
-		hl(row, 0, { end_col = #l, hl_group = "CMenuDim" })
-	end
+	render_command_preview(push, hl)
 
 	b:set_lines(lines)
 	for _, k in ipairs(marks) do b:hl(k[1], k[2], k[3]) end
