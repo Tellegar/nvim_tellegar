@@ -97,9 +97,9 @@ end
 
 ---@class CMake.Config
 ---@field cmake_preset_name string?
----@field build_dir string? -- nil is equivalent to "build"
+---@field build_dir string? -- nil defers to the preset's own binaryDir (if any), else "build"
 ---@field generator string?
----@field defines CMake.Define[]
+---@field defines CMake.Define[]?
 
 ---@class CMake.Define
 ---@field name string
@@ -118,21 +118,41 @@ end
 --- Every dynamic piece (never the fixed flag text) is escaped, since none of
 --- build_dir / preset name / generator / define name+value are guaranteed
 --- shell-safe (e.g. nothing stops a preset name from containing a space).
+---
+--- If build_dir isn't set but a preset is, and `preset` (the caller's already
+--- -resolved cpp_project.cmake_presets.resolve(root, config.cmake_preset_name)
+--- result) has its own binaryDir, -B is skipped in favor of --preset alone
+--- so cmake builds wherever the preset says to. cmake.lua takes the resolved
+--- preset as a plain argument rather than requiring cmake_presets itself and
+--- resolving it internally, so this stays independent of preset-file parsing.
 ---@param config CMake.Config
+---@param preset CMake.Config? config.cmake_preset_name resolved by the caller, or nil if not applicable/resolvable
 ---@return string[]
-function M.command_parts(config)
+function M.command_parts(config, preset)
 	local parts = { "cmake" }
-
-	local build_dir = config.build_dir or "build"
-	parts[1] = parts[1] .. " -B " .. escape(build_dir)
+	local preset_resolved = false
 
 	if config.cmake_preset_name then
+		assert(preset, "config contains preset name, but preset was not supplied")
+		assert(config.cmake_preset_name == preset.cmake_preset_name, "preset names do not match")
+	end
+
+	if config.build_dir then
+		parts[1] = parts[1] .. " -B " .. escape(config.build_dir)
+	elseif config.cmake_preset_name and preset and preset.build_dir then
+		parts[1] = parts[1] .. " --preset " .. escape(config.cmake_preset_name)
+		preset_resolved = true
+	else
+		parts[1] = parts[1] .. " -B " .. escape("build")
+	end
+
+	if config.cmake_preset_name and not preset_resolved then
 		parts[#parts + 1] = "--preset " .. escape(config.cmake_preset_name)
 	end
 	if config.generator then
 		parts[#parts + 1] = "-G " .. escape(config.generator)
 	end
-	for _, d in ipairs(config.defines) do
+	for _, d in ipairs(config.defines or {}) do
 		parts[#parts + 1] = escape("-D" .. d.name .. "=" .. d.value)
 	end
 
@@ -140,9 +160,10 @@ function M.command_parts(config)
 end
 
 --- @param config CMake.Config
+--- @param preset CMake.Config? config.cmake_preset_name resolved by the caller, or nil if not applicable/resolvable
 --- @return string
-function M.command(config)
-	return table.concat(M.command_parts(config), " ")
+function M.command(config, preset)
+	return table.concat(M.command_parts(config, preset), " ")
 end
 
 ----------------------------------------------------------------------------------------------------

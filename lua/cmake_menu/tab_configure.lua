@@ -12,14 +12,17 @@ local CURRENT = "Configure" -- this tab's identity in cmake_menu.tabs
 
 local M = {}
 
+local root = "~/t" -- this is just for placeholder testing
+
 ---@type CMake.Config
 local config = {
-	build_dir = "build/Debug",
-	generator = "Ninja",
+	cmake_preset_name = "gcc-debug",
+	--build_dir = "build/Debug",
+	--generator = "Ninja",
 	defines = {
-		{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" },
-		{ name = "CMAKE_C_COMPILER",              value = "gcc" },
-		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
+	--	{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" },
+	--	{ name = "CMAKE_C_COMPILER",              value = "gcc" },
+	--	{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
 	},
 }
 
@@ -27,6 +30,16 @@ local config = {
 --- lines (all but the first) get a 2-space indent; every line but the last
 --- gets a trailing " \" continuation marker, column-aligned so the backslash
 --- lines end flush with where the (backslash-less) last line's text ends.
+---
+--- TODO: config.cmake_preset_name is passed through unresolved here.
+--- cmake.command_parts now asserts that any preset name has already been
+--- resolved by the caller (see cpp_project.cmake.lua) - it treats a name
+--- that isn't in cmake_presets.list(root) as a caller bug, not something to
+--- degrade around. Before wiring this up for real, resolve config's preset
+--- via cpp_project.cmake_presets.resolve(root, config.cmake_preset_name)
+--- and validate it against .list(root) here (surfacing an invalid preset
+--- name as a UI error), then pass the resolved CMake.Config as command_parts'
+--- second argument.
 ---@param push fun(text: string): integer
 ---@param hl fun(row: integer, col: integer, opts: table)
 local function render_command_preview(push, hl)
