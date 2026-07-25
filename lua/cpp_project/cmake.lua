@@ -107,7 +107,7 @@ end
 
 -- POSIX-shell quoting (sh/bash/zsh single-quote escaping) - not Windows-safe.
 local function escape(str)
-	if str:match("^[%w%-%.,_/:=]+$") then
+	if str:match("^[%w%-%.,_/:=+~]+$") then
 		return str
 	end
 	return "'" .. str:gsub("'", "'\\''") .. "'"
@@ -123,8 +123,7 @@ end
 function M.command_parts(config)
 	local parts = { "cmake" }
 
-	local prefix = "build/"
-	local build_dir = config.build_dir and prefix .. config.build_dir or "build"
+	local build_dir = config.build_dir or "build"
 	parts[1] = parts[1] .. " -B " .. escape(build_dir)
 
 	if config.cmake_preset_name then
