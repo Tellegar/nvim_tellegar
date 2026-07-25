@@ -14,8 +14,9 @@ local function apply()
 	set_hl("CMenuValue",       { link = "String" })
 	set_hl("CMenuDim",         { link = "Comment" })
 	set_hl("CMenuHeading",     { link = "Title" })
-	set_hl("CMenuSelected",    { link = "Visual" })
+	set_hl("CMenuSelected",    { link = "CursorLine" })
 	set_hl("CMenuAction",      { link = "Function" })
+	set_hl("CMenuMarker",      { link = "Special" })
 end
 
 apply()
