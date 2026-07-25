@@ -2,9 +2,22 @@ local map = vim.keymap.set
 
 ----------------------------------------------------------------------------------------------
 
-map("n", "<C-Space>", function()
-	vim.print("hello world")
-end)
+-- cmake_menu: run the test.lua entrypoint, and (shift) reload-then-run by
+-- clearing the module cache first.
+--
+-- `:source`, not `require()`: messages printed during a `require()` get redrawn
+-- away as soon as the callback returns, but messages from a `:source`d script
+-- are held on screen until the next keypress, same as typing `:messages` by hand.
+local test_file = vim.fn.stdpath("config") .. "/lua/cmake_menu/test.lua"
+map("n", "<C-Space>", "<cmd>source " .. test_file .. "<CR>", { desc = "cmake_menu: test" })
+map("n", "<C-S-Space>", function()
+	for name in pairs(package.loaded) do
+		if name:match("^cmake_menu") then
+			package.loaded[name] = nil
+		end
+	end -- reload all cmake_menu modules
+	vim.cmd.source(test_file)
+end, { desc = "cmake_menu: reload + test" })
 
 map("n", "<leader><leader>x", "<cmd>source %<CR>", { desc = "source current file" })
 map("n", "<leader>x", ":.lua<CR>", { desc = "source current line" })

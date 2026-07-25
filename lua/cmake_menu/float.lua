@@ -1,0 +1,202 @@
+--- cmake_menu.float — three borderless floats presented as one window.
+---
+--- From the caller's standpoint this is a single surface; it knows nothing about
+--- its contents. Its whole job is to manage the three real windows underneath.
+--- Responsibilities, and nothing more:
+---   1. window creation      three borderless floats stacked as [header, body,
+---                           footer]; singleton — reopening closes the old set.
+---   2. mapping registration
+---   3. a render step         set_lines + set_extmarks, per pane
+---
+--- There is no content model. A caller ("tab") supplies spec.render(float) and
+--- builds each pane by hand via float.header / float.body / float.footer:
+---   pane:set_lines(lines); pane:hl(row, col, opts); pane:width().
+---
+--- The body is the only focusable window; header and footer immediately bounce
+--- focus back to it, acting as a border extension of the body. Mappings are
+--- therefore set on the body alone. Closing any one window closes all three.
+
+local M = {}
+local ns = vim.api.nvim_create_namespace("cmake_menu")
+
+require("cmake_menu.hl") -- defines the CMenu* highlight groups
+
+--- A single window+buffer the caller renders into by hand.
+---@class CMenu.Pane
+---@field buf integer
+---@field win integer
+local Pane = {}
+Pane.__index = Pane
+
+--- Current inner width of the pane, for right-aligning values.
+function Pane:width()
+	return vim.api.nvim_win_get_width(self.win)
+end
+
+--- Replace the whole pane with `lines` and clear its old highlights.
+---@param lines string[]
+function Pane:set_lines(lines)
+	vim.bo[self.buf].modifiable = true
+	vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
+	vim.bo[self.buf].modifiable = false
+	vim.api.nvim_buf_clear_namespace(self.buf, ns, 0, -1)
+end
+
+--- Add one highlight. `opts` is passed straight to nvim_buf_set_extmark and must
+--- carry hl_group (plus end_col / hl_eol / priority as needed). Call after
+--- set_lines, which clears the namespace.
+---@param row integer   -- 0-based line
+---@param col integer   -- 0-based byte column
+---@param opts table
+function Pane:hl(row, col, opts)
+	vim.api.nvim_buf_set_extmark(self.buf, ns, row, col, opts)
+end
+
+---@class CMenu.Spec
+---@field render fun(float: CMenu.Float)  -- build the panes by hand
+---@field mappings table[]?               -- { { mode?, lhs, rhs }, ... }, set on the body
+---@field header_height integer?          -- default 1
+---@field footer_height integer?          -- default 1
+
+---@class CMenu.Float
+---@field header CMenu.Pane
+---@field body CMenu.Pane
+---@field footer CMenu.Pane
+---@field spec CMenu.Spec
+---@field augroup integer?
+---@field closing boolean?
+local Float = {}
+Float.__index = Float
+
+---@type CMenu.Float
+local self
+
+local function close()
+	if self.closing then return end
+	self.closing = true
+	if self.augroup then
+		pcall(vim.api.nvim_del_augroup_by_id, self.augroup)
+		self.augroup = nil
+	end
+	for _, p in ipairs({ self.header, self.body, self.footer }) do
+		if p and p.win and vim.api.nvim_win_is_valid(p.win) then
+			pcall(vim.api.nvim_win_close, p.win, true) -- bufhidden=wipe deletes the buffer
+		end
+	end
+	self.header, self.body, self.footer = nil, nil, nil
+	self.closing = false
+end
+
+local function setup_window()
+	close()
+
+	local width  = 80
+	local height = 24
+	local hh = self.spec.header_height or 1
+	local fh = self.spec.footer_height or 1
+	local bh = height - hh - fh
+	local col = math.floor((vim.o.columns - width) / 2)
+	local top = math.floor((vim.o.lines - height) / 2) - 1
+
+	local function pane(row, h, enter)
+		local buf = vim.api.nvim_create_buf(false, true)
+		vim.bo[buf].bufhidden = "wipe"
+		local win = vim.api.nvim_open_win(buf, enter or false, {
+			relative = "editor",
+			width    = width,
+			height   = h,
+			row      = row,
+			col      = col,
+			style    = "minimal",
+			border   = "none",
+		})
+		return setmetatable({ buf = buf, win = win }, Pane)
+	end
+
+	self.header = pane(top,           hh, false)
+	self.body   = pane(top + hh,      bh, true) -- focus starts on the body
+	self.footer = pane(top + hh + bh, fh, false)
+end
+
+local function setup_autocmds()
+	self.augroup = vim.api.nvim_create_augroup("CMenu", { clear = true })
+
+	-- closing any of the three windows closes the other two
+	for _, p in ipairs({ self.header, self.body, self.footer }) do
+		vim.api.nvim_create_autocmd("WinClosed", {
+			group = self.augroup,
+			pattern = tostring(p.win),
+			callback = function() close() end,
+		})
+	end
+
+	-- header/footer are display-only: entering either bounces focus back to the
+	-- body. WinEnter can't be scoped to a window by pattern (its pattern matches
+	-- the buffer name, not the window id), so we register one autocmd and filter
+	-- to just those two windows in the callback -- the body never rebounces.
+	local rebounce = { [self.header.win] = true, [self.footer.win] = true }
+	vim.api.nvim_create_autocmd("WinEnter", {
+		group = self.augroup,
+		callback = function()
+			if not self.body or not vim.api.nvim_win_is_valid(self.body.win) then return end
+			if rebounce[vim.api.nvim_get_current_win()] then
+				vim.api.nvim_set_current_win(self.body.win)
+			end
+		end,
+	})
+end
+
+-- Debug: yank all three panes, top to bottom, as one blob to the + clipboard.
+-- Each pane is padded with blank lines to fill its window, so the copy reflects
+-- the full virtual window (>= 24 lines); a body longer than its window keeps all
+-- its lines.
+local function copy_all()
+	local out = {}
+	for _, p in ipairs({ self.header, self.body, self.footer }) do
+		if p and vim.api.nvim_buf_is_valid(p.buf) then
+			local lines = vim.api.nvim_buf_get_lines(p.buf, 0, -1, false)
+			vim.list_extend(out, lines)
+			for _ = #lines + 1, vim.api.nvim_win_get_height(p.win) do
+				out[#out + 1] = ""
+			end
+		end
+	end
+	vim.fn.setreg("+", table.concat(out, "\n"))
+	vim.notify("cmake_menu: copied " .. #out .. " lines to +")
+end
+
+-- Mappings live only on the body: it is the sole focusable window (header and
+-- footer immediately bounce focus back), so it's the only place keys can land.
+local function setup_mappings()
+	local opts = { buffer = self.body.buf, nowait = true, silent = true }
+	vim.keymap.set("n", "q", function() close() end, opts)
+	vim.keymap.set("n", "<C-c>", copy_all, opts)
+	for _, m in ipairs(self.spec.mappings or {}) do
+		vim.keymap.set(m.mode or "n", m.lhs, m.rhs, opts)
+	end
+end
+
+--- Rebuild every pane from the spec's render callback.
+function Float:render()
+	self.spec.render(self)
+end
+
+function Float:close()
+	close()
+end
+
+---@param spec CMenu.Spec?
+---@return CMenu.Float
+function M.open(spec)
+	self = self or setmetatable({}, Float)
+	self.spec = spec or self.spec
+
+	setup_window()
+	setup_autocmds()
+	setup_mappings()
+	self:render()
+
+	return self
+end
+
+return M
