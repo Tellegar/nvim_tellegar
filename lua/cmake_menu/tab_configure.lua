@@ -1,8 +1,13 @@
 --- cmake_menu.tab_configure — STATIC example "Configure" tab, rendered by hand.
 ---
+--- cmake_menu's end goal is to be the interface for driving cmake on a project;
+--- this tab is where that project's build-dir configuration is set up and
+--- previewed before a build_dir is actually created — build type, generator,
+--- and -D defines.
+---
 --- header: the tab strip (see cmake_menu.tabs).  footer: the key hint.
 --- body: right-aligned editable values, a -D defines list, an "add" action, and
---- a multi-line command preview. Nothing here is wired to real cmake yet.
+--- a multi-line command preview.
 
 local float = require("cmake_menu.float")
 local tabs = require("cmake_menu.tabs")
@@ -46,15 +51,12 @@ local function render_command_preview(push, hl)
 	--     -DCMAKE_C_COMPILER=gcc       \
 	--     -DCMAKE_CXX_COMPILER=g++
 
-	-- TODO: config.cmake_preset_name is passed through unresolved here.
-	-- cmake.command_parts now asserts that any preset name has already been
-	-- resolved by the caller (see cpp_project.cmake.lua) - it treats a name
-	-- that isn't in cmake_presets.list(root) as a caller bug, not something to
-	-- degrade around. Before wiring this up for real, resolve config's preset
-	-- via cpp_project.cmake_presets.resolve(root, config.cmake_preset_name)
-	-- and validate it against .list(root) here (surfacing an invalid preset
-	-- name as a UI error), then pass the resolved CMake.Config as command_parts'
-	-- second argument.
+	-- TODO: config_preset is resolved above against a hardcoded placeholder
+	-- root ("~/t"), not the actual project. Before wiring this up for real:
+	-- take the project root from the caller instead of hardcoding it, and
+	-- validate config.cmake_preset_name against cmake_presets.list(root) here
+	-- (surfacing an invalid preset name as a UI error) rather than assuming
+	-- resolve() succeeded.
 	local parts = cmake.command_parts(config, config_preset)
 
 	local lines = {}
