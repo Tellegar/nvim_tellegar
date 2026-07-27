@@ -8,6 +8,7 @@ local float = require("cmake_menu.float")
 local tabs = require("cmake_menu.tabs")
 local cmake = require("cpp_project.cmake")
 local cmake_presets = require("cpp_project.cmake_presets")
+local HL = require("cmake_menu.hl")
 
 local CURRENT = "Configure" -- this tab's identity in cmake_menu.tabs
 
@@ -69,7 +70,7 @@ local function render_command_preview(push, hl)
 			l = l .. string.rep(" ", max_len - #l) .. " \\"
 		end
 		local row = push(l)
-		hl(row, 0, { end_col = #l, hl_group = "CMenuDim" })
+		hl(row, 0, { end_col = #l, hl_group = HL.CMenuDim })
 	end
 end
 
@@ -81,7 +82,7 @@ local function render(m)
 	do
 		local text = " tab/S-tab switch   j/k move   q quit"
 		m.footer:set_lines({ text })
-		m.footer:hl(0, 0, { end_col = #text, hl_group = "CMenuDim" })
+		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.CMenuDim })
 	end
 
 	-- body
@@ -111,7 +112,7 @@ local function render(m)
 		local pad = math.max(1, w - #name - #value)
 		local text = name .. string.rep(" ", pad) .. value
 		local row = push(text)
-		hl(row, #text - #value, { end_col = #text, hl_group = "CMenuValue" })
+		hl(row, #text - #value, { end_col = #text, hl_group = HL.CMenuValue })
 	end
 	item(function() field("build dir",  "build/Debug") end)
 	item(function() field("build type", "Debug") end)
@@ -119,7 +120,7 @@ local function render(m)
 
 	do
 		local row = push("-D Defines")
-		hl(row, 0, { end_col = 10, hl_group = "CMenuHeading" })
+		hl(row, 0, { end_col = 10, hl_group = HL.CMenuHeading })
 	end
 	item(function() field("  CMAKE_EXPORT_COMPILE_COMMANDS", "ON") end)
 	item(function() field("  CMAKE_C_COMPILER",              "gcc") end)
@@ -127,7 +128,7 @@ local function render(m)
 
 	item(function()
 		local row = push("+ Add -Define")
-		hl(row, 0, { end_col = 13, hl_group = "CMenuAction" })
+		hl(row, 0, { end_col = 13, hl_group = HL.CMenuAction })
 	end)
 
 	push("")
@@ -142,8 +143,8 @@ local function render(m)
 	local rows = layout[sel]
 	if rows then
 		for _, r in ipairs(rows) do
-			b:hl(r, 0, { line_hl_group = "CMenuSelected" })
-			b:hl(r, 0, { virt_text = { { "▌", "CMenuMarker" } }, virt_text_pos = "overlay" })
+			b:hl(r, 0, { line_hl_group = HL.CMenuSelected })
+			b:hl(r, 0, { virt_text = { { "▌", HL.CMenuSelectedMarker } }, virt_text_pos = "overlay" })
 		end
 	end
 end

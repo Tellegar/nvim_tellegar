@@ -9,6 +9,8 @@
 --- ordering here. M.tabs stays ordered only to fix the strip layout and the
 --- <Tab>/<S-Tab> cycle direction.
 
+local HL = require("cmake_menu.hl")
+
 local M = {}
 
 -- ordered only for layout + cycle direction; identity is the `name` field
@@ -37,11 +39,11 @@ function M.render(header, current)
 		local col = #text
 		local label = " " .. tab.name .. " "
 		text = text .. label
-		marks[#marks + 1] = { col, col + #label, tab.name == current and "CMenuTabActive" or "CMenuTabInactive" }
+		marks[#marks + 1] = { col, col + #label, tab.name == current and HL.CMenuTabActive or HL.CMenuTabInactive }
 	end
 
 	header:set_lines({ text })
-	header:hl(0, 0, { end_col = #prefix, hl_group = "CMenuHeading" })
+	header:hl(0, 0, { end_col = #prefix, hl_group = HL.CMenuHeading })
 	for _, mk in ipairs(marks) do
 		header:hl(0, mk[1], { end_col = mk[2], hl_group = mk[3] })
 	end
