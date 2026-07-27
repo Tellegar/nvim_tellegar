@@ -7,6 +7,8 @@
 ---                           footer]; singleton — reopening closes the old set.
 ---   2. mapping registration
 ---   3. a render step         set_lines + set_extmarks, per pane
+---   4. cursor visibility     the real cursor is hidden while the body has
+---                           focus, restored on BufLeave/close
 ---
 --- There is no content model. A caller ("tab") supplies spec.render(float) and
 --- builds each pane by hand via float.header / float.body / float.footer:
@@ -18,8 +20,7 @@
 
 local M = {}
 local ns = vim.api.nvim_create_namespace("cmake_menu")
-
-require("cmake_menu.hl") -- defines the CMenu* highlight groups
+local HL = require("cmake_menu.hl")
 
 --- A single window+buffer the caller renders into by hand.
 ---@class CMenu.Pane
@@ -65,6 +66,7 @@ end
 ---@field spec CMenu.Spec
 ---@field augroup integer?
 ---@field closing boolean?
+---@field saved_guicursor string?  -- guicursor before _hide_cursor, nil while restored
 local Float = {}
 Float.__index = Float
 
@@ -74,6 +76,7 @@ local self
 local function close()
 	if self.closing then return end
 	self.closing = true
+	self:_restore_cursor()
 	if self.augroup then
 		pcall(vim.api.nvim_del_augroup_by_id, self.augroup)
 		self.augroup = nil
@@ -144,6 +147,17 @@ local function setup_autocmds()
 				vim.api.nvim_set_current_win(self.body.win)
 			end
 		end,
+	})
+
+	vim.api.nvim_create_autocmd("BufEnter", {
+		group = self.augroup,
+		buffer = self.body.buf,
+		callback = function() self:_hide_cursor() end,
+	})
+	vim.api.nvim_create_autocmd("BufLeave", {
+		group = self.augroup,
+		buffer = self.body.buf,
+		callback = function() self:_restore_cursor() end,
 	})
 end
 
@@ -228,6 +242,25 @@ function Float:render()
 	self.spec.render(self)
 end
 
+function Float:_hide_cursor()
+	if self.saved_guicursor == nil then
+		self.saved_guicursor = vim.go.guicursor
+		vim.go.guicursor = "a:" .. HL.HiddenCursor
+	end
+end
+
+function Float:_restore_cursor()
+	if self.saved_guicursor ~= nil then
+		local saved = self.saved_guicursor
+		self.saved_guicursor = nil
+		-- Transitional "a:" forces a cursor refresh even if `saved` is empty.
+		vim.go.guicursor = "a:"
+		if saved ~= "" then
+			vim.go.guicursor = saved
+		end
+	end
+end
+
 function Float:close()
 	close()
 end
@@ -239,6 +272,7 @@ function M.open(spec)
 	self.spec = spec or self.spec
 
 	setup_window()
+	self:_hide_cursor()
 	setup_autocmds()
 	setup_mappings_clear()
 	setup_mappings()
