@@ -70,7 +70,7 @@ local function render_command_preview(push, hl)
 			l = l .. string.rep(" ", max_len - #l) .. " \\"
 		end
 		local row = push(l)
-		hl(row, 0, { end_col = #l, hl_group = HL.CMenuDim })
+		hl(row, 0, { end_col = #l, hl_group = HL.Dim })
 	end
 end
 
@@ -82,7 +82,7 @@ local function render(m)
 	do
 		local text = " tab/S-tab switch   j/k move   q quit"
 		m.footer:set_lines({ text })
-		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.CMenuDim })
+		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
 	end
 
 	-- body
@@ -112,7 +112,7 @@ local function render(m)
 		local pad = math.max(1, w - #name - #value)
 		local text = name .. string.rep(" ", pad) .. value
 		local row = push(text)
-		hl(row, #text - #value, { end_col = #text, hl_group = HL.CMenuValue })
+		hl(row, #text - #value, { end_col = #text, hl_group = HL.Value })
 	end
 	item(function() field("build dir",  "build/Debug") end)
 	item(function() field("build type", "Debug") end)
@@ -120,7 +120,7 @@ local function render(m)
 
 	do
 		local row = push("-D Defines")
-		hl(row, 0, { end_col = 10, hl_group = HL.CMenuHeading })
+		hl(row, 0, { end_col = 10, hl_group = HL.Heading })
 	end
 	item(function() field("  CMAKE_EXPORT_COMPILE_COMMANDS", "ON") end)
 	item(function() field("  CMAKE_C_COMPILER",              "gcc") end)
@@ -128,7 +128,7 @@ local function render(m)
 
 	item(function()
 		local row = push("+ Add -Define")
-		hl(row, 0, { end_col = 13, hl_group = HL.CMenuAction })
+		hl(row, 0, { end_col = 13, hl_group = HL.Action })
 	end)
 
 	push("")
@@ -143,8 +143,11 @@ local function render(m)
 	local rows = layout[sel]
 	if rows then
 		for _, r in ipairs(rows) do
-			b:hl(r, 0, { line_hl_group = HL.CMenuSelected })
-			b:hl(r, 0, { virt_text = { { "▌", HL.CMenuSelectedMarker } }, virt_text_pos = "overlay" })
+			b:hl(r, 0, {
+				line_hl_group = HL.Selected,
+				virt_text = { { "▌", HL.SelectedMarker } },
+				virt_text_pos = "overlay"
+			})
 		end
 	end
 end

@@ -39,11 +39,11 @@ function M.render(header, current)
 		local col = #text
 		local label = " " .. tab.name .. " "
 		text = text .. label
-		marks[#marks + 1] = { col, col + #label, tab.name == current and HL.CMenuTabActive or HL.CMenuTabInactive }
+		marks[#marks + 1] = { col, col + #label, tab.name == current and HL.TabActive or HL.TabInactive }
 	end
 
 	header:set_lines({ text })
-	header:hl(0, 0, { end_col = #prefix, hl_group = HL.CMenuHeading })
+	header:hl(0, 0, { end_col = #prefix, hl_group = HL.Heading })
 	for _, mk in ipairs(marks) do
 		header:hl(0, mk[1], { end_col = mk[2], hl_group = mk[3] })
 	end

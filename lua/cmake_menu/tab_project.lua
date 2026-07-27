@@ -19,7 +19,7 @@ local function render(m)
 	do
 		local text = " tab/S-tab switch   j/k move   enter run   q quit"
 		m.footer:set_lines({ text })
-		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.CMenuDim })
+		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
 	end
 
 	-- body
@@ -34,7 +34,7 @@ local function render(m)
 		local pad = math.max(1, w - #name - #value)
 		local text = name .. string.rep(" ", pad) .. value
 		local row = push(text)
-		hl(row, #text - #value, { end_col = #text, hl_group = HL.CMenuValue })
+		hl(row, #text - #value, { end_col = #text, hl_group = HL.Value })
 	end
 	info("project", "~/code/hello-cmake")
 	info("config",  "Debug (gcc)")
@@ -47,7 +47,7 @@ local function render(m)
 		if selected then
 			hl(row, 0, {
 				end_row = row + 1, end_col = 0, hl_eol = true,
-				hl_group = HL.CMenuSelected, priority = 100,
+				hl_group = HL.Selected, priority = 100,
 			})
 		end
 	end
@@ -59,7 +59,7 @@ local function render(m)
 
 	do
 		local row = push("Targets")
-		hl(row, 0, { end_col = 7, hl_group = HL.CMenuHeading })
+		hl(row, 0, { end_col = 7, hl_group = HL.Heading })
 	end
 	push("  app")
 	push("  tests")
