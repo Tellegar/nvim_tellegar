@@ -101,6 +101,7 @@ local function setup_window()
 	local function pane(row, h, enter)
 		local buf = vim.api.nvim_create_buf(false, true)
 		vim.bo[buf].bufhidden = "wipe"
+		vim.bo[buf].filetype = "cmake_menu" -- see which-key.lua: disable.ft
 		local win = vim.api.nvim_open_win(buf, enter or false, {
 			relative = "editor",
 			width    = width,
@@ -165,14 +166,60 @@ local function copy_all()
 	vim.notify("cmake_menu: copied " .. #out .. " lines to +")
 end
 
+-- disable all keybinds (probably not complete)
+local function setup_mappings_clear()
+	local function set(modes, lhs, rhs, opts)
+		opts = opts or {}
+		opts.buffer = self.body.buf
+		if opts.nowait == nil then opts.nowait = true end
+		if opts.silent == nil then opts.silent = true end
+		vim.keymap.set(modes, lhs, rhs, opts)
+	end
+
+	for b = 32, 126 do
+		local c = string.char(b)
+		set("n", c, "<Nop>")
+		set("n", "<C-w>"..c, "<Nop>")
+		set("n", "<C-"..c..">", "<Nop>")
+	end
+
+	local named_keys = {
+		"<CR>", "<BS>", "<Tab>", "<Del>", "<Esc>",
+		"<Up>", "<Down>", "<Left>", "<Right>",
+		"<Home>", "<End>", "<PageUp>", "<PageDown>",
+		"<F1>", "<F2>", "<F3>", "<F4>", "<F5>", "<F6>",
+		"<F7>", "<F8>", "<F9>", "<F10>", "<F11>", "<F12>",
+	}
+	for _, k in ipairs(named_keys) do
+		set("n", k, "<Nop>")
+	end
+
+	-- don't move the cursor
+	set("n", "<LeftMouse>", "<Nop>")
+
+	-- keep commands
+	set("n", ":", ":", { silent = false })
+end
 -- Mappings live only on the body: it is the sole focusable window (header and
 -- footer immediately bounce focus back), so it's the only place keys can land.
 local function setup_mappings()
-	local opts = { buffer = self.body.buf, nowait = true, silent = true }
-	vim.keymap.set("n", "q", function() close() end, opts)
-	vim.keymap.set("n", "<C-c>", copy_all, opts)
+	local function set(modes, lhs, rhs, opts)
+		opts = opts or {}
+		opts.buffer = self.body.buf
+		if opts.nowait == nil then opts.nowait = true end
+		if opts.silent == nil then opts.silent = true end
+		vim.keymap.set(modes, lhs, rhs, opts)
+	end
+
+	set("n", "q", function() close() end)
+	set("n", "<Esc>", function() close() end)
+
+	-- for debug
+	set("n", "<C-c>", copy_all)
+
+	-- setup requested keymaps
 	for _, m in ipairs(self.spec.mappings or {}) do
-		vim.keymap.set(m.mode or "n", m.lhs, m.rhs, opts)
+		set(m.mode or "n", m.lhs, m.rhs)
 	end
 end
 
@@ -193,6 +240,7 @@ function M.open(spec)
 
 	setup_window()
 	setup_autocmds()
+	setup_mappings_clear()
 	setup_mappings()
 	self:render()
 
