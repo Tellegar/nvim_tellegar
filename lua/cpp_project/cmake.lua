@@ -113,40 +113,14 @@ local function escape(str)
 	return "'" .. str:gsub("'", "'\\''") .. "'"
 end
 
---- Argument parts of the cmake configure command implied by `config`, one
---- entry per -B/--preset/-G/-D. The first entry carries the "cmake" prefix.
---- Every dynamic piece (never the fixed flag text) is escaped, since none of
---- build_dir / preset name / generator / define name+value are guaranteed
---- shell-safe (e.g. nothing stops a preset name from containing a space).
----
---- If build_dir isn't set but a preset is, and `preset` (the caller's already
---- -resolved cpp_project.cmake_presets.resolve(root, config.cmake_preset_name)
---- result) has its own binaryDir, -B is skipped in favor of --preset alone
---- so cmake builds wherever the preset says to. cmake.lua takes the resolved
---- preset as a plain argument rather than requiring cmake_presets itself and
---- resolving it internally, so this stays independent of preset-file parsing.
 ---@param config CMake.Config
----@param preset CMake.Config? config.cmake_preset_name resolved by the caller, or nil if not applicable/resolvable
 ---@return string[]
-function M.command_parts(config, preset)
-	local parts = { "cmake" }
-	local preset_resolved = false
-
-	if config.cmake_preset_name then
-		assert(preset, "config contains preset name, but preset was not supplied")
-		assert(config.cmake_preset_name == preset.cmake_preset_name, "preset names do not match")
-	end
-
+function M.command_parts(config)
+	local parts = {}
 	if config.build_dir then
-		parts[1] = parts[1] .. " -B " .. escape(config.build_dir)
-	elseif config.cmake_preset_name and preset and preset.build_dir then
-		parts[1] = parts[1] .. " --preset " .. escape(config.cmake_preset_name)
-		preset_resolved = true
-	else
-		parts[1] = parts[1] .. " -B " .. escape("build")
+		parts[#parts + 1] = "-B " .. escape(config.build_dir)
 	end
-
-	if config.cmake_preset_name and not preset_resolved then
+	if config.cmake_preset_name then
 		parts[#parts + 1] = "--preset " .. escape(config.cmake_preset_name)
 	end
 	if config.generator then
@@ -156,14 +130,15 @@ function M.command_parts(config, preset)
 		parts[#parts + 1] = escape("-D" .. d.name .. "=" .. d.value)
 	end
 
+	parts[1] = parts[1] and "cmake "..parts[1] or "cmake"
+
 	return parts
 end
 
 --- @param config CMake.Config
---- @param preset CMake.Config? config.cmake_preset_name resolved by the caller, or nil if not applicable/resolvable
 --- @return string
-function M.command(config, preset)
-	return table.concat(M.command_parts(config, preset), " ")
+function M.command(config)
+	return table.concat(M.command_parts(config), " ")
 end
 
 ----------------------------------------------------------------------------------------------------
