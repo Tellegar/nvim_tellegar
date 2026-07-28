@@ -68,7 +68,7 @@ local function render_command_preview()
 	-- validate config.cmake_preset_name against cmake_presets.list(root) here
 	-- (surfacing an invalid preset name as a UI error) rather than assuming
 	-- resolve() succeeded.
-	local parts = cmake.command_parts(config, config_preset)
+	local parts = cmake.command_parts(config)
 
 	local lines = {}
 	local max_len = 0
