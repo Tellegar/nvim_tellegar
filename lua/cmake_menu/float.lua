@@ -193,7 +193,6 @@ local function setup_mappings_clear()
 	for b = 32, 126 do
 		local c = string.char(b)
 		set("n", c, "<Nop>")
-		set("n", "<C-w>"..c, "<Nop>")
 		set("n", "<C-"..c..">", "<Nop>")
 	end
 
