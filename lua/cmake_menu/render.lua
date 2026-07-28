@@ -77,7 +77,7 @@ function R:mark(row, col, opts)
 	self.marks[#self.marks + 1] = { row, col + #self.margin, opts }
 end
 
----@alias CMenu.Segment string | { text: string, hl: string|table }
+---@alias CMenu.Segment string | { text: string, hl: string|table } | { fill: true|string }
 
 --- Build one line from segments (plain string = unhighlighted; {text, hl} =
 --- highlighted span). Concatenates segment text for the line; for any
@@ -87,21 +87,49 @@ end
 --- a table it's the full mark opts, with `end_col` computed and always
 --- overwriting whatever the caller passed (col/end_col are not the caller's
 --- to set here).
+---
+--- At most one segment may be `{ fill = true|string }` -- an expanding
+--- spacer. At the end, it's replaced with however much padding (the fill
+--- string repeated, default a single space) is needed to stretch the line to
+--- `self.target:width() - 2*#self.margin`; marks after the fill segment
+--- shift right by the inserted padding.
 ---@param segments CMenu.Segment[]
 ---@return integer row
 function R:line2(segments)
 	local text = ""
 	local pending = {} -- { col, end_col, opts }
+	local fill_pos, fill_char, fill_mark_idx
 	for _, seg in ipairs(segments) do
-		local seg_text = type(seg) == "string" and seg or seg.text
-		if type(seg) == "table" and seg.hl then
-			local opts = type(seg.hl) == "string"
-				and { hl_group = seg.hl }
-				or vim.tbl_extend("force", {}, seg.hl)
-			pending[#pending + 1] = { col = #text, end_col = #text + #seg_text, opts = opts }
+		if type(seg) == "table" and seg.fill then
+			assert(fill_pos == nil, "line2(): at most one fill segment is allowed")
+			fill_pos = #text
+			fill_mark_idx = #pending
+			fill_char = seg.fill == true and " " or seg.fill
+			if fill_char == "" then fill_char = " " end
+		else
+			local seg_text = type(seg) == "string" and seg or seg.text
+			if type(seg) == "table" and seg.hl then
+				local opts = type(seg.hl) == "string"
+					and { hl_group = seg.hl }
+					or vim.tbl_extend("force", {}, seg.hl)
+				pending[#pending + 1] = { col = #text, end_col = #text + #seg_text, opts = opts }
+			end
+			text = text .. seg_text
 		end
-		text = text .. seg_text
 	end
+
+	if fill_pos then
+		local target_width = self.target:width() - 2 * #self.margin
+		local pad_len = math.max(0, target_width - #text)
+		---@cast fill_char string
+		local pad = string.rep(fill_char, math.ceil(pad_len / #fill_char)):sub(1, pad_len)
+		text = text:sub(1, fill_pos) .. pad .. text:sub(fill_pos + 1)
+		for i = fill_mark_idx + 1, #pending do
+			pending[i].col = pending[i].col + pad_len
+			pending[i].end_col = pending[i].end_col + pad_len
+		end
+	end
+
 	local row = self:line(text)
 	for _, p in ipairs(pending) do
 		p.opts.end_col = p.end_col
