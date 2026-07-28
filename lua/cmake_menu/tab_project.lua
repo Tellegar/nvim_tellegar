@@ -7,8 +7,11 @@
 local float = require("cmake_menu.float")
 local tabs = require("cmake_menu.tabs")
 local HL = require("cmake_menu.hl")
+local render_mod = require("cmake_menu.render")
 
 local M = {}
+
+local r = render_mod.new()
 
 local function render(m)
 	tabs.render(m.header)
@@ -21,29 +24,27 @@ local function render(m)
 	end
 
 	-- body
-	local b = m.body
-	local w = b:width()
-	local lines, marks = {}, {}
-	local function push(text) lines[#lines + 1] = text; return #lines - 1 end
-	local function hl(row, col, opts) marks[#marks + 1] = { row, col, opts } end
+	r.target = m.body
+	r:reset()
+	local w = m.body:width()
 
 	-- "name        value" info row, value right-aligned to the window edge
 	local function info(name, value)
 		local pad = math.max(1, w - #name - #value)
 		local text = name .. string.rep(" ", pad) .. value
-		local row = push(text)
-		hl(row, #text - #value, { end_col = #text, hl_group = HL.Value })
+		local row = r:line(text)
+		r:mark(row, #text - #value, { end_col = #text, hl_group = HL.Value })
 	end
 	info("project", "~/code/hello-cmake")
 	info("config",  "Debug (gcc)")
 
-	push("")
+	r:line("")
 
 	-- primary actions; the first is drawn selected (full-row highlight)
 	local function action(label, selected)
-		local row = push("→ " .. label)
+		local row = r:line("→ " .. label)
 		if selected then
-			hl(row, 0, {
+			r:mark(row, 0, {
 				end_row = row + 1, end_col = 0, hl_eol = true,
 				hl_group = HL.Selected, priority = 100,
 			})
@@ -53,18 +54,17 @@ local function render(m)
 	action("Run")
 	action("Reconfigure")
 
-	push("")
+	r:line("")
 
 	do
-		local row = push("Targets")
-		hl(row, 0, { end_col = 7, hl_group = HL.Heading })
+		local row = r:line("Targets")
+		r:mark(row, 0, { end_col = 7, hl_group = HL.Heading })
 	end
-	push("  app")
-	push("  tests")
-	push("  bench")
+	r:line("  app")
+	r:line("  tests")
+	r:line("  bench")
 
-	b:set_lines(lines)
-	for _, k in ipairs(marks) do b:hl(k[1], k[2], k[3]) end
+	r:render()
 end
 
 function M.open()

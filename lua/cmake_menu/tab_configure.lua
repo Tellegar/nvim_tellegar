@@ -14,6 +14,7 @@ local tabs = require("cmake_menu.tabs")
 local cmake = require("cpp_project.cmake")
 local cmake_presets = require("cpp_project.cmake_presets")
 local HL = require("cmake_menu.hl")
+local render_mod = require("cmake_menu.render")
 
 local M = {}
 
@@ -21,6 +22,8 @@ local M = {}
 -- Module-level so it survives across renders/tab switches; clamped in render()
 -- since #layout isn't known until then.
 local sel = 1
+
+local r = render_mod.new()
 
 ---@type CMake.Config
 local config = {
@@ -52,9 +55,7 @@ local config_preset = {
 ----------
 
 --- Renders the cmake command implied by `config` as a dimmed, multi-line preview.
----@param push fun(text: string): integer
----@param hl fun(row: integer, col: integer, opts: table)
-local function render_command_preview(push, hl)
+local function render_command_preview()
 	-- e.g.
 	--   cmake -B build/Debug           \
 	--     -G Ninja                     \
@@ -81,8 +82,8 @@ local function render_command_preview(push, hl)
 		if i < #lines then
 			l = l .. string.rep(" ", max_len - #l) .. " \\"
 		end
-		local row = push(l)
-		hl(row, 0, { end_col = #l, hl_group = HL.Dim })
+		local row = r:line(l)
+		r:mark(row, 0, { end_col = #l, hl_group = HL.Dim })
 	end
 end
 
@@ -98,83 +99,69 @@ local function render(m)
 	end
 
 	-- body
-	local b = m.body
-	local MARGIN = "  " -- 2-space gutter kept clear on both edges
-	local w = b:width() - 2 * #MARGIN
-	local lines, marks = {}, {}
-	local function push(text) lines[#lines + 1] = MARGIN .. text .. MARGIN; return #lines - 1 end
-	local function hl(row, col, opts)
-		opts.end_col = opts.end_col + #MARGIN
-		marks[#marks + 1] = { row, col + #MARGIN, opts }
-	end
-
-	-- Wraps a chunk of pushes as one selectable item, recording the rows it
-	-- produced. `layout[i]` is the row list for the i-th selectable item.
-	local layout = {}
-	local function item(fn)
-		local first = #lines
-		fn()
-		local rows = {}
-		for r = first, #lines - 1 do rows[#rows + 1] = r end
-		layout[#layout + 1] = rows
-	end
+	r.target = m.body
+	r.margin = "  " -- 2-space gutter kept clear on both edges
+	r:reset()
+	local w = m.body:width() - 2 * #r.margin
 
 	-- "name        value" field row, value right-aligned to the window edge
 	local function field(name, value)
 		local pad = math.max(1, w - #name - #value)
 		local text = name .. string.rep(" ", pad) .. value
-		local row = push(text)
-		hl(row, #text - #value, { end_col = #text, hl_group = HL.Value })
+		local row = r:line(text)
+		r:mark(row, #text - #value, { end_col = #text, hl_group = HL.Value })
 	end
-	item(function() field("build dir",  "build/Debug") end)
-	item(function() field("build type", "Debug") end)
-	item(function() field("generator",  "Ninja") end)
+	r:item_begin()
+	field("build dir", "build/Debug")
+	r:item_end()
+
+	r:item_begin()
+	field("build type", "Debug")
+	r:item_end()
+
+	r:item_begin()
+	field("generator", "Ninja")
+	r:item_end()
 
 	do
 		local text = "-D Defines:"
-		local row = push(text)
-		hl(row, 0, { end_col = #text, hl_group = HL.Heading })
+		local row = r:line(text)
+		r:mark(row, 0, { end_col = #text, hl_group = HL.Heading })
 	end
 
 	for _, d in ipairs(config.defines or {}) do
-		item(function() field("  " .. d.name, d.value) end)
+		r:item_begin()
+		field("  " .. d.name, d.value)
+		r:item_end()
 	end
 
-	item(function()
-		local row = push("+ Add -Define")
-		hl(row, 0, { end_col = 13, hl_group = HL.Action })
-	end)
+	r:item_begin()
+	do
+		local row = r:line("+ Add -Define")
+		r:mark(row, 0, { end_col = 13, hl_group = HL.Action })
+	end
+	r:item_end()
 
-	item(function() -- static example (temp)
+	r:item_begin() -- static example (temp)
+	do
 		local d = config_preset.defines[1]
 		local name, value = "  "..d.name, d.value
-		--item(function() field("  " .. d.name, d.value) end)
 		local pad = math.max(1, w - #name - #value)
 		local text = name .. string.rep(" ", pad) .. value
-		local row = push(text)
-		hl(row, 0, { end_col = #name, hl_group = HL.Dim })
-		hl(row, #text - #value, { end_col = #text, hl_group = HL.Dim })
-	end)
-
-	push("")
-
-	item(function() render_command_preview(push, hl) end)
-
-	b:set_lines(lines)
-	for _, k in ipairs(marks) do b:hl(k[1], k[2], k[3]) end
-
-	-- selection: highlight + mark every row of the selected item
-	sel = math.max(1, math.min(sel, #layout))
-	local rows = layout[sel]
-	if rows then
-		for _, r in ipairs(rows) do
-			b:hl(r, 0, {
-				line_hl_group = HL.Selected,
-				virt_text = { { "▌", HL.SelectedMarker } },
-				virt_text_pos = "overlay"
-			})
-		end
+		local row = r:line(text)
+		r:mark(row, 0, { end_col = #name, hl_group = HL.Dim })
+		r:mark(row, #text - #value, { end_col = #text, hl_group = HL.Dim })
 	end
+	r:item_end()
+
+	r:line("")
+
+	r:item_begin()
+	render_command_preview()
+	r:item_end()
+
+	r:render()
+	sel = r:render_selection(sel)
 end
 
 function M.open()

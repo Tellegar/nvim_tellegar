@@ -14,6 +14,7 @@ local tabs = require("cmake_menu.tabs")
 local cmake = require("cpp_project.cmake")
 local cmake_presets = require("cpp_project.cmake_presets")
 local HL = require("cmake_menu.hl")
+local render_mod = require("cmake_menu.render")
 
 local M = {}
 
@@ -21,6 +22,8 @@ local M = {}
 -- Module-level so it survives across renders/tab switches; clamped in render()
 -- since #layout isn't known until then.
 local sel = 1
+
+local r = render_mod.new()
 
 ---@type CMake.Config
 local config = {
@@ -64,10 +67,28 @@ local function render(m)
 	end
 
 	-- body
-	do
-		m.body:set_lines({"hello world"})
-		--m.body:hl()
-	end
+	r.target = m.body
+	r.margin = "  "
+	r:reset()
+
+	r:item_begin()
+	r:line("hello")
+	r:mark(nil, 0, { end_col = #"hello", hl_group = HL.String })
+	r:item_end()
+
+	r:line2{
+		{ text="hello", hl=HL.Value },
+		"  ",
+		"world"
+	}
+
+	r:item_begin()
+	r:line("world")
+	r:mark(nil, 0, { end_col = #"world", hl_group = HL.Value })
+	r:item_end()
+
+	r:render()
+	sel = r:render_selection(sel)
 end
 
 function M.open()
