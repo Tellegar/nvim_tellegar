@@ -8,12 +8,10 @@ local float = require("cmake_menu.float")
 local tabs = require("cmake_menu.tabs")
 local HL = require("cmake_menu.hl")
 
-local CURRENT = "Project" -- this tab's identity in cmake_menu.tabs
-
 local M = {}
 
 local function render(m)
-	tabs.render(m.header, CURRENT)
+	tabs.render(m.header)
 
 	-- footer: key hint
 	do
@@ -72,7 +70,7 @@ end
 function M.open()
 	return float.open({
 		render = render,
-		mappings = tabs.mappings(CURRENT),
+		mappings = tabs.mappings(),
 	})
 end
 

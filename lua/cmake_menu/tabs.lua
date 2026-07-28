@@ -13,33 +13,47 @@ local HL = require("cmake_menu.hl")
 
 local M = {}
 
+---@class Tab
+---@field name string
+---@field modname string
+
 -- ordered only for layout + cycle direction; identity is the `name` field
+---@type Tab[]
 M.tabs = {
-	{ name = "Project",   open = function() require("cmake_menu.tab_project").open() end },
-	{ name = "Configure", open = function() require("cmake_menu.tab_configure").open() end },
+	{ name = "Project",   modname = "cmake_menu.tab_project" },
+	{ name = "Configure", modname = "cmake_menu.tab_configure" },
+	{ name = "Test",      modname = "cmake_menu.tab_test" },
 }
 
+---@type integer index of current tab
+M.current = 1
+
+local function tab_open(tab)
+	require(tab.modname).open()
+end
+
 --- Index of the tab named `name`, or nil.
----@param name string
+---@param name string tab:name or tab:modname
 local function index_of(name)
 	for i, tab in ipairs(M.tabs) do
-		if tab.name == name then return i end
+		if tab.name == name or tab.modname == name then
+			return i
+		end
 	end
 end
 
 --- Draw the tab strip into the header pane.
 ---@param header CMenu.Pane
----@param current string   -- name of the active tab
-function M.render(header, current)
+function M.render(header)
 	local prefix = "CMake:"
 	local text = prefix
 	local marks = {}
-	for _, tab in ipairs(M.tabs) do
+	for i, tab in ipairs(M.tabs) do
 		text = text .. " "
 		local col = #text
 		local label = " " .. tab.name .. " "
 		text = text .. label
-		marks[#marks + 1] = { col, col + #label, tab.name == current and HL.TabActive or HL.TabInactive }
+		marks[#marks + 1] = { col, col + #label, i == M.current and HL.TabActive or HL.TabInactive }
 	end
 
 	header:set_lines({ text })
@@ -49,21 +63,25 @@ function M.render(header, current)
 	end
 end
 
---- Open the tab `delta` steps away from the one named `current` (wraps around).
----@param current string
+--- Open the tab `delta` steps away from the `current`
 ---@param delta integer
-function M.step(current, delta)
-	local i = index_of(current) or 1
-	M.tabs[(i - 1 + delta) % #M.tabs + 1].open()
+function M.step(delta)
+	M.current = (M.current + delta - 1) % #M.tabs + 1
+	tab_open(M.tabs[M.current])
 end
 
 --- Mappings a tab spreads into its spec so <Tab>/<S-Tab> cycle tabs.
----@param current string
-function M.mappings(current)
+function M.mappings()
 	return {
-		{ lhs = "<Tab>",   rhs = function() M.step(current, 1) end },
-		{ lhs = "<S-Tab>", rhs = function() M.step(current, -1) end },
+		{ lhs = "<Tab>",   rhs = function() M.step( 1) end },
+		{ lhs = "<S-Tab>", rhs = function() M.step(-1) end },
 	}
+end
+
+---@param name string tab:name or tab:modname
+function M.open(name)
+	M.current = index_of(name) or 1
+	tab_open(M.tabs[M.current])
 end
 
 return M

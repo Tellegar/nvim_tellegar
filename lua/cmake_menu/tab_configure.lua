@@ -15,8 +15,6 @@ local cmake = require("cpp_project.cmake")
 local cmake_presets = require("cpp_project.cmake_presets")
 local HL = require("cmake_menu.hl")
 
-local CURRENT = "Configure" -- this tab's identity in cmake_menu.tabs
-
 local M = {}
 
 -- 1-based index into this render's `layout` (selectable items, top to bottom).
@@ -30,6 +28,7 @@ local config = {
 	build_dir = "build/Debug",
 	generator = "Ninja",
 	defines = {
+		--{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
 		{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" },
 		{ name = "CMAKE_C_COMPILER",              value = "gcc" },
 		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
@@ -37,8 +36,19 @@ local config = {
 }
 
 -- temp --
-local root = "~/t" -- this is just for placeholder testing
-local config_preset = cmake_presets.resolve(root, "gcc-debug")
+--local root = "~/t"
+--local config_preset = cmake_presets.resolve(root, "gcc-debug")
+local config_preset = {
+	build_dir = "~/t/build/gcc-debug",
+	cmake_preset_name = "gcc-debug",
+	defines = {
+		{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
+		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
+		{ name = "CMAKE_C_COMPILER",              value = "gcc" },
+		{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" }
+	},
+	generator = "Ninja"
+}
 ----------
 
 --- Renders the cmake command implied by `config` as a dimmed, multi-line preview.
@@ -78,7 +88,7 @@ end
 
 ---@param m CMenu.Float
 local function render(m)
-	tabs.render(m.header, CURRENT)
+	tabs.render(m.header)
 
 	-- footer: key hint
 	do
@@ -121,16 +131,29 @@ local function render(m)
 	item(function() field("generator",  "Ninja") end)
 
 	do
-		local row = push("-D Defines")
-		hl(row, 0, { end_col = 10, hl_group = HL.Heading })
+		local text = "-D Defines:"
+		local row = push(text)
+		hl(row, 0, { end_col = #text, hl_group = HL.Heading })
 	end
-	item(function() field("  CMAKE_EXPORT_COMPILE_COMMANDS", "ON") end)
-	item(function() field("  CMAKE_C_COMPILER",              "gcc") end)
-	item(function() field("  CMAKE_CXX_COMPILER",            "g++") end)
+
+	for _, d in ipairs(config.defines or {}) do
+		item(function() field("  " .. d.name, d.value) end)
+	end
 
 	item(function()
 		local row = push("+ Add -Define")
 		hl(row, 0, { end_col = 13, hl_group = HL.Action })
+	end)
+
+	item(function() -- static example (temp)
+		local d = config_preset.defines[1]
+		local name, value = "  "..d.name, d.value
+		--item(function() field("  " .. d.name, d.value) end)
+		local pad = math.max(1, w - #name - #value)
+		local text = name .. string.rep(" ", pad) .. value
+		local row = push(text)
+		hl(row, 0, { end_col = #name, hl_group = HL.Dim })
+		hl(row, #text - #value, { end_col = #text, hl_group = HL.Dim })
 	end)
 
 	push("")
@@ -167,7 +190,7 @@ function M.open()
 			{ lhs = "k",      rhs = function() move(-1) end },
 			{ lhs = "<Down>", rhs = function() move(1) end },
 			{ lhs = "<Up>",   rhs = function() move(-1) end },
-		}, tabs.mappings(CURRENT)),
+		}, tabs.mappings()),
 	})
 	return m
 end
