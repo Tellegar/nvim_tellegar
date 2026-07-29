@@ -27,7 +27,7 @@ local r = render_mod.new()
 
 ---@type CMake.Config
 local config = {
-	--cmake_preset_name = "gcc-debug",
+	cmake_preset_name = "gcc-debug",
 	--build_dir = "build/Debug",
 	--generator = "Ninja",
 	--defines = {
@@ -42,9 +42,9 @@ local config = {
 --local root = "~/t"
 --local config_preset = cmake_presets.resolve(root, "gcc-debug")
 local config_preset = {
-	--build_dir = "~/t/build/gcc-debug",
-	--cmake_preset_name = "gcc-debug",
-	--generator = "Ninja",
+	build_dir = "~/t/build/gcc-debug",
+	cmake_preset_name = "gcc-debug",
+	generator = "Ninja",
 	defines = {
 		{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
 		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
@@ -72,7 +72,7 @@ end
 local Source = {
 	value = "value",
 	default = "default",
-	preset = "default",
+	preset = "preset",
 }
 
 ---@class CMake.ConfigSource
@@ -108,6 +108,9 @@ local function eval_config()
 	if config.generator then
 		eff.generator = config.generator
 		source.generator = Source.value
+	elseif config.cmake_preset_name and config_preset and config_preset.generator then
+		eff.generator = config_preset.generator
+		source.generator = Source.preset
 	else
 		eff.generator = nil
 		source.generator = Source.default
@@ -135,6 +138,34 @@ local function eval_config()
 	end
 
 	return eff, source
+end
+
+--- Strips preset-sourced values out of `eff_config`, leaving only what was
+--- set explicitly or falls back to a hardcoded default (e.g. build_dir
+--- defaulting to "build"). This is what should actually be passed to cmake —
+--- preset-sourced defines/build_dir/generator are handled by --preset itself
+--- once presets are wired up, and shouldn't also be re-emitted as explicit
+--- flags.
+---@param eff_config CMake.Config
+---@param eff_source CMake.ConfigSource
+---@return CMake.Config
+local function apply_default_config(eff_config, eff_source)
+	local raw = {}
+
+	for _, key in ipairs{ "cmake_preset_name", "build_dir", "generator" } do
+		if eff_source[key] ~= Source.preset then
+			raw[key] = eff_config[key]
+		end
+	end
+
+	raw.defines = {}
+	for i, d in ipairs(eff_config.defines or {}) do
+		if eff_source.defines[i] ~= Source.preset then
+			raw.defines[#raw.defines + 1] = d
+		end
+	end
+
+	return raw
 end
 
 --- Renders the cmake command implied by `config` as a dimmed, multi-line preview.
@@ -193,6 +224,7 @@ local function render(m)
 	local hl_from_source = {
 		value=HL.Value,
 		default=HL.Dim,
+		preset=HL.Dim,
 	}
 
 	r:item_begin()
@@ -252,7 +284,7 @@ local function render(m)
 	r:line("")
 
 	r:item_begin()
-	render_command_preview(cmake.command_parts(eff_config))
+	render_command_preview(cmake.command_parts(apply_default_config(eff_config, eff_source)))
 	r:item_end()
 
 	r:render()
