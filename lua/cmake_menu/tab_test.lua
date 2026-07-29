@@ -149,7 +149,7 @@ end
 ---@param eff_config CMake.Config
 ---@param eff_source CMake.ConfigSource
 ---@return CMake.Config
-local function apply_default_config(eff_config, eff_source)
+local function config_filter_preset(eff_config, eff_source)
 	local raw = {}
 
 	for _, key in ipairs{ "cmake_preset_name", "build_dir", "generator" } do
@@ -284,7 +284,7 @@ local function render(m)
 	r:line("")
 
 	r:item_begin()
-	render_command_preview(cmake.command_parts(apply_default_config(eff_config, eff_source)))
+	render_command_preview(cmake.command_parts(config_filter_preset(eff_config, eff_source)))
 	r:item_end()
 
 	r:render()
