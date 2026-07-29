@@ -31,7 +31,7 @@ local config = {
 	--build_dir = "build/Debug",
 	--generator = "Ninja",
 	--defines = {
-	--	--{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
+	--	{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
 	--	{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" },
 	--	{ name = "CMAKE_C_COMPILER",              value = "gcc" },
 	--	{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
@@ -42,20 +42,104 @@ local config = {
 --local root = "~/t"
 --local config_preset = cmake_presets.resolve(root, "gcc-debug")
 local config_preset = {
-	build_dir = "~/t/build/gcc-debug",
-	cmake_preset_name = "gcc-debug",
+	--build_dir = "~/t/build/gcc-debug",
+	--cmake_preset_name = "gcc-debug",
+	--generator = "Ninja",
 	defines = {
 		{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
 		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
 		{ name = "CMAKE_C_COMPILER",              value = "gcc" },
 		{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" }
 	},
-	generator = "Ninja"
 }
+
+---@param cfg CMake.Config
+---@param name string
+---@return CMake.Define def
+---@return integer? idx
+local function get_define(cfg, name)
+	local def, idx = { name=name }, nil
+	for i, d in ipairs(cfg.defines or {}) do
+		if d.name == name then
+			def, idx = d, i
+			break
+		end
+	end
+	return def, idx
+end
 ----------
 
+local Source = {
+	value = "value",
+	default = "default",
+	preset = "default",
+}
+
+---@class CMake.ConfigSource
+---@field cmake_preset_name string Source.*
+---@field build_dir string Source.*
+---@field generator string Source.*
+---@field defines string[] Source.* per entry, parallel to CMake.Config.defines
+
+---@return CMake.Config eff
+---@return CMake.ConfigSource source
+local function eval_config()
+	local eff, source = {}, {}
+
+	if config.cmake_preset_name then
+		eff.cmake_preset_name = config.cmake_preset_name
+		source.cmake_preset_name = Source.value
+	else
+		eff.cmake_preset_name = nil
+		source.cmake_preset_name = Source.default
+	end
+
+	if config.build_dir then
+		eff.build_dir = config.build_dir
+		source.build_dir = Source.value
+	elseif config.cmake_preset_name and config_preset and config_preset.build_dir then
+		eff.build_dir = config_preset.build_dir
+		source.build_dir = Source.preset
+	else
+		eff.build_dir = "build"
+		source.build_dir = Source.default
+	end
+
+	if config.generator then
+		eff.generator = config.generator
+		source.generator = Source.value
+	else
+		eff.generator = nil
+		source.generator = Source.default
+	end
+
+	eff.defines = {}
+	source.defines = {}
+
+	local defines = {} ---@type table[string,integer]
+	for _, d in ipairs(config.defines or {}) do
+		eff.defines[#eff.defines+1] = { name=d.name, value=d.value }
+		source.defines[#source.defines+1] = Source.value
+		defines[d.name] = true
+		defines[d.name] = #eff.defines
+	end
+
+	if config.cmake_preset_name and config_preset and config_preset.defines then
+		for _, d in ipairs(config_preset.defines or {}) do
+			if not defines[d.name] then
+				eff.defines[#eff.defines+1] = { name=d.name, value=d.value }
+				source.defines[#source.defines+1] = Source.preset
+				defines[d.name] = #eff.defines
+			end
+		end
+	end
+
+	return eff, source
+end
+
 --- Renders the cmake command implied by `config` as a dimmed, multi-line preview.
-local function render_command_preview()
+---@param parts string[]
+local function render_command_preview(parts)
 	-- e.g.
 	--   cmake -B build/Debug           \
 	--     -G Ninja                     \
@@ -68,7 +152,6 @@ local function render_command_preview()
 	-- validate config.cmake_preset_name against cmake_presets.list(root) here
 	-- (surfacing an invalid preset name as a UI error) rather than assuming
 	-- resolve() succeeded.
-	local parts = cmake.command_parts(config)
 
 	local lines = {}
 	local max_len = 0
@@ -105,36 +188,38 @@ local function render(m)
 	r.margin = "  "
 	r:reset()
 
-	local build_dir_value
-	if config.build_dir then
-		build_dir_value = { text=config.build_dir, hl=HL.Value }
-	elseif config.cmake_preset_name and config_preset and config_preset.build_dir then
-		build_dir_value = { text=config_preset.build_dir, hl=HL.Dim }
-	else
-		build_dir_value = { text="build", hl=HL.Dim }
-	end
+	local eff_config, eff_source = eval_config()
+
+	local hl_from_source = {
+		value=HL.Value,
+		default=HL.Dim,
+	}
 
 	r:item_begin()
 	r:line2{
 		"build dir",
 		{ fill=true },
-		build_dir_value
+		{ text=eff_config.build_dir, hl=hl_from_source[eff_source.build_dir]}
 	}
 	r:item_end()
 
-	r:item_begin()
-	r:line2{
-		"build type",
-		{ fill=true },
-		{ text="Debug", hl=HL.Value }
-	}
-	r:item_end()
+	do
+		local def, idx = get_define(eff_config, "CMAKE_BUILD_TYPE")
+		local source = (eff_source.defines or {})[idx] or "default"
+		r:item_begin()
+		r:line2{
+			"build type",
+			{ fill=true },
+			{ text=def.value or "(unset)", hl=hl_from_source[source] }
+		}
+		r:item_end()
+	end
 
 	r:item_begin()
 	r:line2{
 		"generator",
 		{ fill=true },
-		{ text="Ninja", hl=HL.Value }
+		{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
 	}
 	r:item_end()
 
@@ -143,6 +228,20 @@ local function render(m)
 	r:line2{
 		{ text="-D Defines:", hl=HL.Heading }
 	}
+
+	--vim.print(eff_config)
+	--vim.print(eff_sources)
+	for i, d in ipairs(eff_config.defines or {}) do
+		r:item_begin()
+		local source = eff_source.defines[i]
+		r:line2{
+			" ",
+			{ text=d.name, hl=hl_from_source[source] },
+			{ fill=true },
+			{ text=d.value, hl=hl_from_source[source] },
+		}
+		r:item_end()
+	end
 
 	r:item_begin()
 	r:line2{
@@ -153,7 +252,7 @@ local function render(m)
 	r:line("")
 
 	r:item_begin()
-	render_command_preview()
+	render_command_preview(cmake.command_parts(eff_config))
 	r:item_end()
 
 	r:render()
