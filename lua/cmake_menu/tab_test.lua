@@ -9,12 +9,13 @@
 --- body: right-aligned editable values, a -D defines list, an "add" action, and
 --- a multi-line command preview.
 
-local float = require("cmake_menu.float")
-local tabs = require("cmake_menu.tabs")
+local HL = require("cmake_menu.hl")
 local cmake = require("cpp_project.cmake")
 local cmake_presets = require("cpp_project.cmake_presets")
-local HL = require("cmake_menu.hl")
+local float = require("cmake_menu.float")
 local render_mod = require("cmake_menu.render")
+local tabs = require("cmake_menu.tabs")
+local utils = require("utils")
 
 local M = {}
 
@@ -27,7 +28,7 @@ local r = render_mod.new()
 
 ---@type CMake.Config
 local config = {
-	cmake_preset_name = "gcc-debug",
+	--cmake_preset_name = "gcc-debug",
 	--build_dir = "build/Debug",
 	--generator = "Ninja",
 	--defines = {
@@ -53,20 +54,65 @@ local config_preset = {
 	},
 }
 
+-----@param cfg CMake.Config
+-----@param name string
+-----@return CMake.Define def
+-----@return integer? idx
+--local function define_get(cfg, name)
+--	local def, idx = { name=name }, nil
+--	for i, d in ipairs(cfg.defines or {}) do
+--		if d.name == name then
+--			def, idx = d, i
+--			break
+--		end
+--	end
+--	return def, idx
+--end
+
 ---@param cfg CMake.Config
 ---@param name string
----@return CMake.Define def
----@return integer? idx
-local function get_define(cfg, name)
-	local def, idx = { name=name }, nil
-	for i, d in ipairs(cfg.defines or {}) do
+---@return string? value nil if `name` isn't set
+---@return integer? index nil if `name` isn't set
+local function define_get(cfg, name)
+	for i, d in ipairs(cfg.defines) do
 		if d.name == name then
-			def, idx = d, i
-			break
+			return d.value, i
 		end
 	end
-	return def, idx
 end
+
+---@param cfg CMake.Config
+---@param name string
+local function define_clear(cfg, name)
+	if not cfg.defines then return end
+	for i, d in ipairs(cfg.defines) do
+		if d.name == name then
+			table.remove(cfg.defines, i)
+			return
+		end
+	end
+	if next(cfg.defines) == nil then
+		cfg.defines = nil
+	end
+end
+
+---@param cfg CMake.Config
+---@param name string
+---@param value string|nil
+local function define_set(cfg, name, value)
+	if value == nil then
+		return define_clear(cfg, name)
+	end
+	cfg.defines = cfg.defines or {}
+	for _, d in ipairs(cfg.defines) do
+		if d.name == name then
+			d.value = value
+			return
+		end
+	end
+	cfg.defines[#cfg.defines + 1] = { name = name, value = value }
+end
+
 ----------
 
 local Source = {
@@ -203,6 +249,23 @@ local function render_command_preview(parts)
 	end
 end
 
+---@class CMenu.Action
+---@field key string
+---@field key_alts string[]?
+---@field action fun()
+
+-- [sel] -> actions
+---@type CMenu.Action[][]
+local item_actions = {}
+
+--- adds action(s) to last item
+---@param spec CMenu.Action|CMenu.Action[]
+local function item_actions_set(spec)
+	local list = spec.key and { spec } or spec
+	local idx = #r.layout
+	item_actions[idx] = vim.list_extend(item_actions[idx] or {}, list)
+end
+
 ---@param m CMenu.Float
 local function render(m)
 	tabs.render(m.header)
@@ -218,6 +281,7 @@ local function render(m)
 	r.target = m.body
 	r.margin = "  "
 	r:reset()
+	item_actions = {}
 
 	local eff_config, eff_source = eval_config()
 
@@ -227,42 +291,110 @@ local function render(m)
 		preset=HL.Dim,
 	}
 
+	-- TODO detect preset and show it as an seletable item
+	--      this probably needs to wait till the invocation of this tab is clear (as in thought out)
+
 	r:item_begin()
 	r:line2{
 		"build dir",
 		{ fill=true },
-		{ text=eff_config.build_dir, hl=hl_from_source[eff_source.build_dir]}
+		{ text=utils.shell_escape(eff_config.build_dir), hl=hl_from_source[eff_source.build_dir]}
 	}
 	r:item_end()
+	item_actions_set{
+		{ key="<CR>",
+			action=function()
+				local default = eff_config.build_dir
+				vim.ui.input(
+					{ prompt = "build dir name: ", default = default },
+					function(v)
+						if not v then return end
+						config.build_dir = (v and v ~= "") and v or nil
+					end
+				)
+			end },
+		{ key="x",
+			action=function()
+				config.build_dir = nil
+			end },
+	}
 
 	do
-		local def, idx = get_define(eff_config, "CMAKE_BUILD_TYPE")
+		local value, idx = define_get(eff_config, "CMAKE_BUILD_TYPE")
 		local source = (eff_source.defines or {})[idx] or "default"
 		r:item_begin()
 		r:line2{
 			"build type",
 			{ fill=true },
-			{ text=def.value or "(unset)", hl=hl_from_source[source] }
+			{ text=value or "(unset)", hl=hl_from_source[source] }
 		}
 		r:item_end()
+		local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
+		item_actions_set{
+			{ key="<CR>",
+				action=function()
+					vim.ui.select(
+						choices,
+						{ prompt = "Select build type:"},
+						function(choice)
+							if not choice then return end
+							if choice == choices[1] then choice = nil end
+							define_set(config, "CMAKE_BUILD_TYPE", choice)
+						end
+					)
+				end },
+			{ key="x",
+				action=function()
+					define_clear(config, "CMAKE_BUILD_TYPE")
+				end },
+		}
 	end
 
-	r:item_begin()
-	r:line2{
-		"generator",
-		{ fill=true },
-		{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
-	}
-	r:item_end()
+	do
+		--cmake.GENERATORS
+		--local choices = { "(unset)", "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
+
+		local choices, values = { "(unset)" }, { nil }
+		for _, gen in ipairs(cmake.GENERATORS) do
+			local choice = gen.name
+			if gen.default then
+				choice = choice.." (cmake default)"
+			end
+			if gen.flag then
+				choice = choice.." "..gen.flag
+			end
+			choices[#choices+1] = choice
+			values[#values+1] = gen.name
+		end
+		r:item_begin()
+		r:line2{
+			"generator",
+			{ fill=true },
+			{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
+		}
+		r:item_end()
+		item_actions_set{
+			{ key="<CR>",
+				action=function()
+					vim.ui.select(
+						choices,
+						{ prompt = "build_type"},
+						function(choice)
+							if not choice then return end
+							if choice == choices[1] then choice = nil end
+							config.generator = choice
+						end
+					)
+				end },
+			{ key="x",
+				action=function()
+					config.generator = nil
+				end },
+		}
+	end
 
 	r:line("")
-
-	r:line2{
-		{ text="-D Defines:", hl=HL.Heading }
-	}
-
-	--vim.print(eff_config)
-	--vim.print(eff_sources)
+	r:line2{{ text="-D Defines:", hl=HL.Heading }}
 	for i, d in ipairs(eff_config.defines or {}) do
 		r:item_begin()
 		local source = eff_source.defines[i]
@@ -274,15 +406,11 @@ local function render(m)
 		}
 		r:item_end()
 	end
-
 	r:item_begin()
-	r:line2{
-		{ text="+Add -Define", hl=HL.Action }
-	}
+	r:line2{{ text="+Add -Define", hl=HL.Action }}
 	r:item_end()
 
 	r:line("")
-
 	r:item_begin()
 	render_command_preview(cmake.command_parts(config_filter_preset(eff_config, eff_source)))
 	r:item_end()
@@ -291,21 +419,39 @@ local function render(m)
 	sel = r:render_selection(sel)
 end
 
+---@param key string
+local function dispatcher(key)
+	local actions = item_actions[sel]
+	if not actions then return end
+	for _, a in ipairs(actions) do
+		if a.key == key then
+			a.action()
+			break
+		end
+	end
+end
+
 function M.open()
 	local m
 	local function move(delta)
 		sel = sel + delta
 		m:render()
 	end
-	m = float.open({
-		render = render,
-		mappings = vim.list_extend({
-			{ lhs = "j",      rhs = function() move(1) end },
-			{ lhs = "k",      rhs = function() move(-1) end },
-			{ lhs = "<Down>", rhs = function() move(1) end },
-			{ lhs = "<Up>",   rhs = function() move(-1) end },
-		}, tabs.mappings()),
-	})
+	m = float.open{ render = render }
+	local dispatcher_keys = { "<CR>", "x" }
+	for _, k in ipairs(dispatcher_keys) do
+		m:map{ lhs=k, rhs=function()
+			dispatcher(k)
+			render(m)
+		end }
+	end
+	m:map{
+		{ lhs="j",      rhs=function() move(1) end },
+		{ lhs="k",      rhs=function() move(-1) end },
+		{ lhs="<Down>", rhs=function() move(1) end },
+		{ lhs="<Up>",   rhs=function() move(-1) end },
+	}
+	m:map(tabs.mappings())
 	return m
 end
 
