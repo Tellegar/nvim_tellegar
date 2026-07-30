@@ -66,7 +66,12 @@ function R:line(text)
 end
 
 --- Queue a highlight, margin-adjusted, applied on render(). `row` defaults to
---- the last line pushed (mirrors tab_configure.lua's `mark(nil, col, opts)`).
+--- the last line pushed.
+--- ```
+--- ...
+--- r:text(...)
+--- r:mark(nil, col, opts)
+--- ```
 ---@param row integer?
 ---@param col integer
 ---@param opts table  -- must carry hl_group / end_col etc, per Pane:hl
