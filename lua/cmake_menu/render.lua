@@ -82,7 +82,7 @@ function R:mark(row, col, opts)
 	self.marks[#self.marks + 1] = { row, col + #self.margin, opts }
 end
 
----@alias CMenu.Segment string | { text: string, hl: string|table } | { fill: true|string }
+---@alias CMenu.Segment string | { text: string, hl: string|table } | { fill: true|string, hl: string|table }
 
 --- Build one line from segments (plain string = unhighlighted; {text, hl} =
 --- highlighted span). Concatenates segment text for the line; for any
@@ -97,13 +97,18 @@ end
 --- spacer. At the end, it's replaced with however much padding (the fill
 --- string repeated, default a single space) is needed to stretch the line to
 --- `self.target:width() - 2*#self.margin`; marks after the fill segment
---- shift right by the inserted padding.
+--- shift right by the inserted padding. A fill segment may also carry `hl`,
+--- which highlights the inserted padding.
+---
+--- Padding is measured in display columns (via strdisplaywidth), so multi-byte
+--- fill characters (─, etc.) line up to the true window width; mark columns
+--- stay in bytes, as extmarks require.
 ---@param segments CMenu.Segment[]
 ---@return integer row
 function R:line2(segments)
 	local text = ""
 	local pending = {} -- { col, end_col, opts }
-	local fill_pos, fill_char, fill_mark_idx
+	local fill_pos, fill_char, fill_mark_idx, fill_hl
 	for _, seg in ipairs(segments) do
 		if type(seg) == "table" and seg.fill then
 			assert(fill_pos == nil, "line2(): at most one fill segment is allowed")
@@ -111,6 +116,11 @@ function R:line2(segments)
 			fill_mark_idx = #pending
 			fill_char = seg.fill == true and " " or seg.fill
 			if fill_char == "" then fill_char = " " end
+			if seg.hl then
+				fill_hl = type(seg.hl) == "string"
+					and { hl_group = seg.hl }
+					or vim.tbl_extend("force", {}, seg.hl)
+			end
 		else
 			local seg_text = type(seg) == "string" and seg or seg.text
 			if type(seg) == "table" and seg.hl then
@@ -125,13 +135,27 @@ function R:line2(segments)
 
 	if fill_pos then
 		local target_width = self.target:width() - 2 * #self.margin
-		local pad_len = math.max(0, target_width - #text)
 		---@cast fill_char string
-		local pad = string.rep(fill_char, math.ceil(pad_len / #fill_char)):sub(1, pad_len)
+		-- Pad in display columns, then measure the result in bytes for the mark
+		-- shift: a fill char like ─ is 3 bytes but 1 column, so the two differ.
+		-- Repeat whole fill chars while they still fit (never split one), which
+		-- exactly fills the width for single-column fills.
+		local pad_cols = math.max(0, target_width - vim.fn.strdisplaywidth(text))
+		local fill_cols = math.max(1, vim.fn.strdisplaywidth(fill_char))
+		local pad, pad_w = "", 0
+		while pad_w + fill_cols <= pad_cols do
+			pad = pad .. fill_char
+			pad_w = pad_w + fill_cols
+		end
+		local pad_bytes = #pad
 		text = text:sub(1, fill_pos) .. pad .. text:sub(fill_pos + 1)
 		for i = fill_mark_idx + 1, #pending do
-			pending[i].col = pending[i].col + pad_len
-			pending[i].end_col = pending[i].end_col + pad_len
+			pending[i].col = pending[i].col + pad_bytes
+			pending[i].end_col = pending[i].end_col + pad_bytes
+		end
+		if fill_hl and pad_bytes > 0 then
+			-- appended after the shift loop so it isn't itself shifted
+			pending[#pending + 1] = { col = fill_pos, end_col = fill_pos + pad_bytes, opts = fill_hl }
 		end
 	end
 
