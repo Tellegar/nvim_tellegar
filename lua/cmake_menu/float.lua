@@ -5,7 +5,8 @@
 --- Responsibilities, and nothing more:
 ---   1. window creation      three borderless floats stacked as [header, body,
 ---                           footer]; singleton — reopening closes the old set.
----   2. mapping registration
+---   2. mapping registration  base keys (q/Esc close, debug copy) at open();
+---                           callers layer their own on top via Float:map()
 ---   3. a render step         set_lines + set_extmarks, per pane
 ---   4. cursor visibility     the real cursor is hidden while the body has
 ---                           focus, restored on BufLeave/close
@@ -55,7 +56,6 @@ end
 
 ---@class CMenu.Spec
 ---@field render fun(float: CMenu.Float)  -- build the panes by hand
----@field mappings table[]?               -- { { mode?, lhs, rhs }, ... }, set on the body
 ---@field header_height integer?          -- default 1
 ---@field footer_height integer?          -- default 1
 
@@ -229,16 +229,34 @@ local function setup_mappings()
 
 	-- for debug
 	set("n", "<C-c>", copy_all)
-
-	-- setup requested keymaps
-	for _, m in ipairs(self.spec.mappings or {}) do
-		set(m.mode or "n", m.lhs, m.rhs)
-	end
 end
 
 --- Rebuild every pane from the spec's render callback.
 function Float:render()
 	self.spec.render(self)
+end
+
+---@class CMenu.Mapping
+---@field modes? string|string[]
+---@field lhs string
+---@field rhs string|function
+---@field opts? vim.keymap.set.Opts
+
+--- Register additional buffer-local keymaps on the body, layered on top of
+--- the base q/Esc/close and debug bindings set up by open(). Call once per
+--- open() (the body buffer -- and any keymaps on it -- is wiped and recreated
+--- on every open(), so this doesn't survive a tab switch); call as many times
+--- as convenient, e.g. once per group of mappings.
+---@param mapping CMenu.Mapping|CMenu.Mapping[]
+function Float:map(mapping)
+	local mappings = mapping.lhs and { mapping } or mapping
+	for _, m in ipairs(mappings) do
+		vim.keymap.set(m.modes or "n", m.lhs, m.rhs, {
+			buffer = self.body.buf,
+			nowait = true,
+			silent = true,
+		})
+	end
 end
 
 function Float:_hide_cursor()
