@@ -54,21 +54,6 @@ local config_preset = {
 	},
 }
 
------@param cfg CMake.Config
------@param name string
------@return CMake.Define def
------@return integer? idx
---local function define_get(cfg, name)
---	local def, idx = { name=name }, nil
---	for i, d in ipairs(cfg.defines or {}) do
---		if d.name == name then
---			def, idx = d, i
---			break
---		end
---	end
---	return def, idx
---end
-
 ---@param cfg CMake.Config
 ---@param name string
 ---@return string? value nil if `name` isn't set
