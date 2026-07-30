@@ -22,7 +22,6 @@ local M = {}
 M.tabs = {
 	--{ name = "Project",   modname = "cmake_menu.tab_project" },
 	{ name = "Configure", modname = "cmake_menu.tab_configure" },
-	{ name = "Test",      modname = "cmake_menu.tab_test" },
 }
 
 ---@type integer index of current tab

@@ -38,7 +38,7 @@ local config_preset = cmake_presets.resolve(root, "gcc-debug")
 
 --require("cmake_menu.tab_project").open()
 --require("cmake_menu.tab_configure").open()
-require("cmake_menu.tabs").open("Test")
+require("cmake_menu.tabs").open("Configure")
 
 --local cmake = require("cpp_project.cmake")
 --vim.print(cmake)
