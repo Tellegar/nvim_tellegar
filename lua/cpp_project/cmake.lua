@@ -13,12 +13,16 @@
 -- live here rather than in cmake_menu, since turning a config into an
 -- actual cmake invocation is UI-independent too.
 
+local utils = require("utils")
+
 local M = {}
 
 M.BUILD_TYPES = { "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
 
 -- will be populated when the M.generators finishes
--- ignores deprecated, bubbles flag != nil to the back
+-- ignores deprecated
+-- [default == true] are(is) bubbled to front
+-- [flag ~= nil] are bubbled to back
 M.GENERATORS = {}
 
 ----------------------------------------------------------------------------------------------------
@@ -105,29 +109,21 @@ end
 ---@field name string
 ---@field value string
 
--- POSIX-shell quoting (sh/bash/zsh single-quote escaping) - not Windows-safe.
-local function escape(str)
-	if str:match("^[%w%-%.,_/:=+~]+$") then
-		return str
-	end
-	return "'" .. str:gsub("'", "'\\''") .. "'"
-end
-
 ---@param config CMake.Config
 ---@return string[]
 function M.command_parts(config)
 	local parts = {}
 	if config.build_dir then
-		parts[#parts + 1] = "-B " .. escape(config.build_dir)
+		parts[#parts + 1] = "-B " .. utils.shell_escape(config.build_dir)
 	end
 	if config.cmake_preset_name then
-		parts[#parts + 1] = "--preset " .. escape(config.cmake_preset_name)
+		parts[#parts + 1] = "--preset " .. utils.shell_escape(config.cmake_preset_name)
 	end
 	if config.generator then
-		parts[#parts + 1] = "-G " .. escape(config.generator)
+		parts[#parts + 1] = "-G " .. utils.shell_escape(config.generator)
 	end
 	for _, d in ipairs(config.defines or {}) do
-		parts[#parts + 1] = escape("-D" .. d.name .. "=" .. d.value)
+		parts[#parts + 1] = utils.shell_escape("-D" .. d.name .. "=" .. d.value)
 	end
 
 	parts[1] = parts[1] and "cmake "..parts[1] or "cmake"
@@ -146,21 +142,22 @@ end
 ----------------------------------------------------------------------------------------------------
 
 M.generators(function (generators)
-	local out_with_flag = {}
+	local out_default = {}
 	local out = {}
+	local out_with_flag = {}
 	for _, g in ipairs(generators) do
 		if g.deprecated then
 			goto continue
 		elseif g.flag then
 			out_with_flag[#out_with_flag+1] = g
+		elseif g.default then
+			out_default[#out_default+1] = g
 		else
 			out[#out+1] = g
 		end
 		::continue::
 	end
-	vim.list_extend(out, out_with_flag)
-
-	M.GENERATORS = out
+	M.GENERATORS = utils.concat{ out_default, out, out_with_flag }
 end)
 
 return M
