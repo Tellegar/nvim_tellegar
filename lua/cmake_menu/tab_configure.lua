@@ -282,39 +282,23 @@ local function dispatcher(key)
 end
 
 ----------------------------------------------------------------------------------------------------
--- render
+-- body items
 ----------------------------------------------------------------------------------------------------
 
----@param m CMenu.Float
-local function render(m)
-	tabs.render(m.header)
+-- Effective config + per-field source for the current render, set by render()
+-- before the body_item_* functions below run.
+---@type CMake.Config
+local eff_config
+---@type CMake.ConfigSource
+local eff_source
 
-	-- footer: key hint
-	do
-		local text = " tab/S-tab switch   j/k move   q quit"
-		m.footer:set_lines({ text })
-		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
-	end
+local hl_from_source = {
+	value=HL.Value,
+	default=HL.Dim,
+	preset=HL.Dim,
+}
 
-	-- body
-	r.target = m.body
-	r.margin = "  "
-	r:reset()
-	item_actions = {}
-
-	local eff_config, eff_source = eval_config()
-
-	local hl_from_source = {
-		value=HL.Value,
-		default=HL.Dim,
-		preset=HL.Dim,
-	}
-
-	-- TODO detect preset and show it as an seletable item
-	--      this probably needs to wait till the invocation of this tab is clear (as in thought out)
-
-	r:line("")
-
+local function body_item_build_dir()
 	r:item_begin()
 	r:line2{
 		"build dir",
@@ -339,82 +323,83 @@ local function render(m)
 				config.build_dir = nil
 			end },
 	}
+end
 
-	do
-		local value, idx = define_get(eff_config, "CMAKE_BUILD_TYPE")
-		local source = (eff_source.defines or {})[idx] or "default"
-		r:item_begin()
-		r:line2{
-			"build type",
-			{ fill=true },
-			{ text=value or "(unset)", hl=hl_from_source[source] }
-		}
-		r:item_end()
-		local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
-		item_actions_set{
-			{ key="<CR>",
-				action=function()
-					vim.ui.select(
-						choices,
-						{ prompt = "Select build type:"},
-						function(choice)
-							if not choice then return end
-							if choice == choices[1] then choice = nil end
-							define_set(config, "CMAKE_BUILD_TYPE", choice)
-						end
-					)
-				end },
-			{ key="x",
-				action=function()
-					define_clear(config, "CMAKE_BUILD_TYPE")
-				end },
-		}
-	end
+local function body_item_build_type()
+	local value, idx = define_get(eff_config, "CMAKE_BUILD_TYPE")
+	local source = (eff_source.defines or {})[idx] or "default"
+	r:item_begin()
+	r:line2{
+		"build type",
+		{ fill=true },
+		{ text=value or "(unset)", hl=hl_from_source[source] }
+	}
+	r:item_end()
+	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
+	item_actions_set{
+		{ key="<CR>",
+			action=function()
+				vim.ui.select(
+					choices,
+					{ prompt = "Select build type:"},
+					function(choice)
+						if not choice then return end
+						if choice == choices[1] then choice = nil end
+						define_set(config, "CMAKE_BUILD_TYPE", choice)
+					end
+				)
+			end },
+		{ key="x",
+			action=function()
+				define_clear(config, "CMAKE_BUILD_TYPE")
+			end },
+	}
+end
 
-	do
-		--cmake.GENERATORS
-		--local choices = { "(unset)", "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
+local function body_item_generator()
+	--cmake.GENERATORS
+	--local choices = { "(unset)", "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
 
-		local choices, values = { "(unset)" }, { nil }
-		for _, gen in ipairs(cmake.GENERATORS) do
-			local choice = gen.name
-			if gen.default then
-				choice = choice.." (cmake default)"
-			end
-			if gen.flag then
-				choice = choice.." "..gen.flag
-			end
-			choices[#choices+1] = choice
-			values[#values+1] = gen.name
+	local choices, values = { "(unset)" }, { nil }
+	for _, gen in ipairs(cmake.GENERATORS) do
+		local choice = gen.name
+		if gen.default then
+			choice = choice.." (cmake default)"
 		end
-		r:item_begin()
-		r:line2{
-			"generator",
-			{ fill=true },
-			{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
-		}
-		r:item_end()
-		item_actions_set{
-			{ key="<CR>",
-				action=function()
-					vim.ui.select(
-						choices,
-						{ prompt = "build_type"},
-						function(choice)
-							if not choice then return end
-							if choice == choices[1] then choice = nil end
-							config.generator = choice
-						end
-					)
-				end },
-			{ key="x",
-				action=function()
-					config.generator = nil
-				end },
-		}
+		if gen.flag then
+			choice = choice.." "..gen.flag
+		end
+		choices[#choices+1] = choice
+		values[#values+1] = gen.name
 	end
+	r:item_begin()
+	r:line2{
+		"generator",
+		{ fill=true },
+		{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
+	}
+	r:item_end()
+	item_actions_set{
+		{ key="<CR>",
+			action=function()
+				vim.ui.select(
+					choices,
+					{ prompt = "build_type"},
+					function(choice)
+						if not choice then return end
+						if choice == choices[1] then choice = nil end
+						config.generator = choice
+					end
+				)
+			end },
+		{ key="x",
+			action=function()
+				config.generator = nil
+			end },
+	}
+end
 
-	r:line("")
+local function body_item_defines()
 	r:line2{{ text="-D Defines:", hl=HL.Heading }}
 	for i, d in ipairs(eff_config.defines or {}) do
 		r:item_begin()
@@ -474,6 +459,9 @@ local function render(m)
 				end },
 		}
 	end
+end
+
+local function body_item_add_define()
 	r:item_begin()
 	r:line2{{ text="+Add -Define", hl=HL.Action }}
 	r:item_end()
@@ -494,11 +482,51 @@ local function render(m)
 					end)
 			end },
 	}
+end
 
-	r:line("")
+local function body_item_command_preview()
 	r:item_begin()
 	render_command_preview(cmake.command_parts(config_filter_preset(eff_config, eff_source)))
 	r:item_end()
+end
+
+----------------------------------------------------------------------------------------------------
+-- render
+----------------------------------------------------------------------------------------------------
+
+---@param m CMenu.Float
+local function render(m)
+	tabs.render(m.header)
+
+	-- footer: key hint
+	do
+		local text = " tab/S-tab switch   j/k move   q quit"
+		m.footer:set_lines({ text })
+		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
+	end
+
+	-- body
+	r.target = m.body
+	r.margin = "  "
+	r:reset()
+	item_actions = {}
+
+	eff_config, eff_source = eval_config()
+
+	-- TODO detect preset and show it as an seletable item
+	--      this probably needs to wait till the invocation of this tab is clear (as in thought out)
+
+	r:line("")
+	body_item_build_dir()
+	body_item_build_type()
+	body_item_generator()
+
+	r:line("")
+	body_item_defines()
+	body_item_add_define()
+
+	r:line("")
+	body_item_command_preview()
 
 	r:render()
 	sel = r:render_selection(sel)
