@@ -20,7 +20,7 @@ local M = {}
 -- ordered only for layout + cycle direction; identity is the `name` field
 ---@type Tab[]
 M.tabs = {
-	--{ name = "Project",   modname = "cmake_menu.tab_project" },
+	{ name = "Project",   modname = "cmake_menu.tab_project" },
 	{ name = "Configure", modname = "cmake_menu.tab_configure" },
 }
 
