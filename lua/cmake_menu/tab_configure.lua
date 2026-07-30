@@ -170,15 +170,14 @@ function M.open()
 		sel = sel + delta
 		m:render()
 	end
-	m = float.open({
-		render = render,
-		mappings = vim.list_extend({
-			{ lhs = "j",      rhs = function() move(1) end },
-			{ lhs = "k",      rhs = function() move(-1) end },
-			{ lhs = "<Down>", rhs = function() move(1) end },
-			{ lhs = "<Up>",   rhs = function() move(-1) end },
-		}, tabs.mappings()),
-	})
+	m = float.open({ render = render })
+	m:map{
+		{ lhs = "j",      rhs = function() move(1) end },
+		{ lhs = "k",      rhs = function() move(-1) end },
+		{ lhs = "<Down>", rhs = function() move(1) end },
+		{ lhs = "<Up>",   rhs = function() move(-1) end },
+	}
+	m:map(tabs.mappings())
 	return m
 end
 

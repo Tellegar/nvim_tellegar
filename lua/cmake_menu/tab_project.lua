@@ -68,10 +68,9 @@ local function render(m)
 end
 
 function M.open()
-	return float.open({
-		render = render,
-		mappings = tabs.mappings(),
-	})
+	local m = float.open({ render = render })
+	m:map(tabs.mappings())
+	return m
 end
 
 return M
