@@ -313,6 +313,8 @@ local function render(m)
 	-- TODO detect preset and show it as an seletable item
 	--      this probably needs to wait till the invocation of this tab is clear (as in thought out)
 
+	r:line("")
+
 	r:item_begin()
 	r:line2{
 		"build dir",
