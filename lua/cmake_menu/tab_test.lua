@@ -26,6 +26,10 @@ local sel = 1
 
 local r = render_mod.new()
 
+----------------------------------------------------------------------------------------------------
+-- state
+----------------------------------------------------------------------------------------------------
+
 ---@type CMake.Config
 local config = {
 	--cmake_preset_name = "gcc-debug",
@@ -54,12 +58,16 @@ local config_preset = {
 	},
 }
 
+----------------------------------------------------------------------------------------------------
+-- define helpers
+----------------------------------------------------------------------------------------------------
+
 ---@param cfg CMake.Config
 ---@param name string
 ---@return string? value nil if `name` isn't set
 ---@return integer? index nil if `name` isn't set
 local function define_get(cfg, name)
-	for i, d in ipairs(cfg.defines) do
+	for i, d in ipairs(cfg.defines or {}) do
 		if d.name == name then
 			return d.value, i
 		end
@@ -70,7 +78,7 @@ end
 ---@param name string
 local function define_clear(cfg, name)
 	if not cfg.defines then return end
-	for i, d in ipairs(cfg.defines) do
+	for i, d in ipairs(cfg.defines or {}) do
 		if d.name == name then
 			table.remove(cfg.defines, i)
 			return
@@ -98,7 +106,9 @@ local function define_set(cfg, name, value)
 	cfg.defines[#cfg.defines + 1] = { name = name, value = value }
 end
 
-----------
+----------------------------------------------------------------------------------------------------
+-- effective config
+----------------------------------------------------------------------------------------------------
 
 local Source = {
 	value = "value",
@@ -199,6 +209,10 @@ local function config_filter_preset(eff_config, eff_source)
 	return raw
 end
 
+----------------------------------------------------------------------------------------------------
+-- command preview
+----------------------------------------------------------------------------------------------------
+
 --- Renders the cmake command implied by `config` as a dimmed, multi-line preview.
 ---@param parts string[]
 local function render_command_preview(parts)
@@ -234,10 +248,14 @@ local function render_command_preview(parts)
 	end
 end
 
+----------------------------------------------------------------------------------------------------
+-- item actions
+----------------------------------------------------------------------------------------------------
+
 ---@class CMenu.Action
 ---@field key string
 ---@field key_alts string[]?
----@field action fun()
+---@field action fun(string)
 
 -- [sel] -> actions
 ---@type CMenu.Action[][]
@@ -250,6 +268,22 @@ local function item_actions_set(spec)
 	local idx = #r.layout
 	item_actions[idx] = vim.list_extend(item_actions[idx] or {}, list)
 end
+
+---@param key string
+local function dispatcher(key)
+	local actions = item_actions[sel]
+	if not actions then return end
+	for _, a in ipairs(actions) do
+		if a.key == key then
+			a.action(key)
+			break
+		end
+	end
+end
+
+----------------------------------------------------------------------------------------------------
+-- render
+----------------------------------------------------------------------------------------------------
 
 ---@param m CMenu.Float
 local function render(m)
@@ -390,10 +424,74 @@ local function render(m)
 			{ text=d.value, hl=hl_from_source[source] },
 		}
 		r:item_end()
+		item_actions_set{
+			{ key="<CR>",
+				action=function(dispatched_key)
+					local default = dispatched_key == "i" and "" or d.value
+					if not default then
+						vim.notify("default is nil, should not happen")
+						return
+					end
+
+					vim.ui.input(
+						{ prompt = d.name .. " = ", default = default },
+						function(v)
+							if not v then return end
+							define_set(config, d.name, v)
+						end)
+				end },
+			{ key="<S-CR>",
+				action=function(dispatched_key)
+					local default = dispatched_key == "I" and "" or d.name
+					if not default then
+						vim.notify("default is nil, should not happen")
+						return
+					end
+
+					local _, idx = define_get(config, d.name)
+
+					vim.ui.input(
+						{ prompt = "var name: ", default = default },
+						function(v)
+							if not v then return end
+							-- TODO strip v
+							--notify("v: " .. tostring(v) .. " i: " .. i)
+							if not idx then
+								define_set(config, v, d.value)
+							else
+								config.defines[idx].name = v
+							end
+						end
+					)
+
+				end },
+			{
+				key="x",
+				action=function()
+					define_clear(config, d.name)
+				end },
+		}
 	end
 	r:item_begin()
 	r:line2{{ text="+Add -Define", hl=HL.Action }}
 	r:item_end()
+	item_actions_set{
+		{ key="<CR>",
+			action=function()
+				vim.ui.input(
+					{ prompt = "NAME=VALUE: " },
+					function(v)
+						if not v then return end
+						local name, value = v:match("^%s*([^=]-)%s*=(.*)$")
+						if not name or not value then
+							vim.notify("cmake_menu: expected NAME=VALUE, got: " .. v, vim.log.levels.ERROR)
+							return
+						end
+						define_set(config, name, value)
+						sel = sel + 1
+					end)
+			end },
+	}
 
 	r:line("")
 	r:item_begin()
@@ -404,17 +502,9 @@ local function render(m)
 	sel = r:render_selection(sel)
 end
 
----@param key string
-local function dispatcher(key)
-	local actions = item_actions[sel]
-	if not actions then return end
-	for _, a in ipairs(actions) do
-		if a.key == key then
-			a.action()
-			break
-		end
-	end
-end
+----------------------------------------------------------------------------------------------------
+-- open
+----------------------------------------------------------------------------------------------------
 
 function M.open()
 	local m
@@ -423,7 +513,7 @@ function M.open()
 		m:render()
 	end
 	m = float.open{ render = render }
-	local dispatcher_keys = { "<CR>", "x" }
+	local dispatcher_keys = { "<CR>", "<S-CR>", "x" }
 	for _, k in ipairs(dispatcher_keys) do
 		m:map{ lhs=k, rhs=function()
 			dispatcher(k)

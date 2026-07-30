@@ -197,7 +197,7 @@ local function setup_mappings_clear()
 	end
 
 	local named_keys = {
-		"<CR>", "<BS>", "<Tab>", "<Del>", "<Esc>",
+		"<CR>", "<C-CR>", "<S-CR>", "<BS>", "<Tab>", "<Del>", "<Esc>",
 		"<Up>", "<Down>", "<Left>", "<Right>",
 		"<Home>", "<End>", "<PageUp>", "<PageDown>",
 		"<F1>", "<F2>", "<F3>", "<F4>", "<F5>", "<F6>",
