@@ -18,8 +18,9 @@ map("n", "<C-S-Space>", function()
 			package.loaded[name] = nil
 		end
 	end -- reload all cmake_menu modules
-	vim.cmd.source(test_file)
-end, { desc = "cmake_menu: reload + test" })
+	--vim.cmd.source(test_file)
+	return "<cmd>source " .. test_file .. "<CR>"
+end, { expr = true, desc = "cmake_menu: reload + test" })
 
 map("n", "<leader><leader>x", "<cmd>source %<CR>", { desc = "source current file" })
 map("n", "<leader>x", ":.lua<CR>", { desc = "source current line" })

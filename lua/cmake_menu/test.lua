@@ -42,3 +42,7 @@ require("cmake_menu.tabs").open("Project")
 
 --local cmake = require("cpp_project.cmake")
 --vim.print(cmake)
+
+--local cpp_project = require("cpp_project")
+--vim.print(cpp_project.find_root("/home/tellegar/t/src/greet.cpp"))
+
