@@ -6,6 +6,8 @@
 --- body below to try things out.
 
 local HL = require("cmake_menu.hl")
+local actions = require("cmake_menu.actions")
+local dropdown = require("cmake_menu.dropdown")
 local float = require("cmake_menu.float")
 local render_mod = require("cmake_menu.render")
 local session = require("cmake_menu.session")
@@ -14,17 +16,29 @@ local utils = require("utils")
 
 local M = {}
 
+-- persists across renders: selection + the current frame's action map
 local sel = 2
-local r = render_mod.new()
+local acts = actions.new()
 
--- scratch dropdown state
-local expanded = false          -- is the dummy item's option list open
-local choice                    -- the currently picked option, nil = unset
-local options = { "a", "b", "c", "d" }
+-- expansion state for the source-root dropdown (just the flag; the anchor row
+-- and its toggle action are rendered below, in the tab itself)
+local root_dd = { expanded = false }
 
--- actions[i] = what <CR> does on the i-th selectable item; rebuilt each render
--- so it stays aligned with the layout as expansion adds/removes items.
-local actions = {}
+--- Candidate roots to override with: session.dir() and its ancestors, nearest
+--- first. Recomputed each render (depends on session.buf), passed to the dropdown
+--- as a function.
+---@return string[]
+local function root_candidates()
+	local dirs = {}
+	local dir = session.dir()
+	while dir do
+		dirs[#dirs + 1] = dir
+		local parent = vim.fs.dirname(dir)
+		if parent == dir then break end
+		dir = parent
+	end
+	return dirs
+end
 
 ---@param m CMenu.Float
 local function render(m)
@@ -37,18 +51,17 @@ local function render(m)
 		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
 	end
 
-	-- body (empty — scratch new content here)
-	r.target = m.body
+	-- body: a fresh render context per pass; actions rebind to it
+	local r = render_mod.new(m.body)
 	r.margin = "  "
-	r:reset()
-	actions = {}
+	acts:begin(r)
 
 	r:item_begin()
 	r:line2{
-		{ text="project root" },
+		{ text="source root" },
 		{ fill=true },
 		{
-			text=session.root or "(unset)",
+			text=session.root and vim.fn.fnamemodify(session.root, ":~") or "(unset)",
 			hl=session.root and HL.Value or HL.Dim
 		},
 	}
@@ -73,37 +86,20 @@ local function render(m)
 		},
 	}
 	r:item_end()
-	actions[#actions + 1] = function() end
+	-- the source-root row is the expandable anchor; <CR> toggles its dropdown
+	acts:set{ key = "<CR>", action = function()
+		root_dd.expanded = not root_dd.expanded
+	end }
+	acts:set{ key = "x", action = function()
+		session.set_root(nil)
+	end }
 
-	-- dummy item: <CR> toggles the option list; right-aligned current choice
-	r:item_begin()
-	r:line2{
-		{ text="dummy" },
-		{ fill=true },
-		{
-			text=choice or "(unset)",
-			hl=choice and HL.Value or HL.Dim
-		},
-	}
-	r:item_end()
-	actions[#actions + 1] = function()
-		expanded = not expanded
-		m:render()
-	end
-
-	-- expanded option list: <CR> picks the option and collapses
-	if expanded then
-		for _, opt in ipairs(options) do
-			r:item_begin()
-			r:line2{ "  ", { text=opt } }
-			r:item_end()
-			actions[#actions + 1] = function()
-				choice = opt
-				expanded = false
-				m:render()
-			end
-		end
-	end
+	-- the expansion itself: candidate roots (state-dependent) + pick callback
+	dropdown.render(root_dd, r, acts, {
+		choices = root_candidates,
+		text = function(dir) return vim.fn.fnamemodify(dir, ":~") end,
+		on_pick = session.set_root,
+	})
 
 	r:render()
 	sel = r:render_selection(sel)
@@ -119,7 +115,10 @@ function M.open()
 	m:map{
 		{ lhs="j",      rhs=function() move(1) end },
 		{ lhs="k",      rhs=function() move(-1) end },
-		{ lhs="<CR>",   rhs=function() if actions[sel] then actions[sel]() end end },
+		{ lhs="<Down>", rhs=function() move(1) end },
+		{ lhs="<Up>",   rhs=function() move(-1) end },
+		{ lhs="<CR>",   rhs=function() acts:dispatch(sel, "<CR>"); m:render() end },
+		{ lhs="x",      rhs=function() acts:dispatch(sel, "x"); m:render() end },
 	}
 	m:map(tabs.mappings())
 	return m
