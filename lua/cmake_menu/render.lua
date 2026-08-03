@@ -36,10 +36,15 @@ local M = {}
 local R = {}
 R.__index = R
 
+--- A fresh render context. `pane` (a CMenu.Pane) is the flush target; it can
+--- also be assigned to `self.target` later. A render context holds no state
+--- between renders, so make a new one per render() pass rather than reusing
+--- one with reset().
+---@param pane CMenu.Pane?
 ---@return CMenu.Render
-function M.new()
+function M.new(pane)
 	return setmetatable({
-		target = nil,
+		target = pane,
 		margin = "",
 		lines = {},
 		marks = {},
@@ -48,8 +53,8 @@ function M.new()
 	}, R)
 end
 
---- Clear accumulated state for a fresh build against `self.target`.
---- Call once per render(m) pass, after (re)assigning `self.target`.
+--- Clear accumulated state for a fresh build against `self.target`. Only needed
+--- when a render context is reused across renders; prefer a new() per pass.
 function R:reset()
 	self.lines = {}
 	self.marks = {}
