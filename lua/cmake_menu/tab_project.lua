@@ -78,10 +78,10 @@ local function render(m)
 	r:item_begin()
 	r:line2{
 		"Project root",
-		{ fill = true },
-		{ text = project_root, hl = HL.Value },
+		{ fill=true },
+		{ text=project_root, hl = HL.Value },
 		" ",
-		{ text = "●", hl = HL.Action },
+		{ text="●", hl = HL.Action },
 	}
 	r:item_end()
 
@@ -117,10 +117,10 @@ function M.open()
 	end
 	m = float.open{ render = render }
 	m:map{
-		{ lhs = "j",      rhs = function() move(1) end },
-		{ lhs = "k",      rhs = function() move(-1) end },
-		{ lhs = "<Down>", rhs = function() move(1) end },
-		{ lhs = "<Up>",   rhs = function() move(-1) end },
+		{ lhs="j",      rhs=function() move(1) end },
+		{ lhs="k",      rhs=function() move(-1) end },
+		{ lhs="<Down>", rhs=function() move(1) end },
+		{ lhs="<Up>",   rhs=function() move(-1) end },
 	}
 	m:map(tabs.mappings())
 	return m
