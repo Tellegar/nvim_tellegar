@@ -38,11 +38,11 @@ local config_preset = cmake_presets.resolve(root, "gcc-debug")
 
 --require("cmake_menu.tab_project").open()
 --require("cmake_menu.tab_configure").open()
-require("cmake_menu.tabs").open("Project")
+require("cmake_menu").open("Project")
 
 --local cmake = require("cpp_project.cmake")
 --vim.print(cmake)
 
---local cpp_project = require("cpp_project")
+local cpp_project = require("cpp_project")
 --vim.print(cpp_project.find_root("/home/tellegar/t/src/greet.cpp"))
 

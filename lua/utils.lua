@@ -30,4 +30,36 @@ function M.shell_escape(str)
 	return str
 end
 
+--- Renders `value` as a Lua-ish string. Tables become `{ k=v, ... }`, nested
+--- tables recurse. Single line by default; pass `multiline=true` for an
+--- indented layout.
+---@param value any
+---@param opts? { multiline?: boolean, indent?: string }
+---@return string
+function M.inspect(value, opts)
+	opts = opts or {}
+	if type(value) ~= "table" then
+		return type(value) == "string" and string.format("%q", value) or tostring(value)
+	end
+
+	local multiline = opts.multiline
+	local indent = opts.indent or ""
+	local child = indent .. "\t"
+
+	local parts = {}
+	for k, v in pairs(value) do
+		local key = (type(k) == "string" and k:match("^[%a_][%w_]*$")) and k or "[" .. M.inspect(k) .. "]"
+		local nested = multiline and { multiline = true, indent = child } or nil
+		parts[#parts + 1] = key .. "=" .. M.inspect(v, nested)
+	end
+
+	if #parts == 0 then
+		return "{}"
+	end
+	if multiline then
+		return "{\n" .. child .. table.concat(parts, ",\n" .. child) .. "\n" .. indent .. "}"
+	end
+	return "{ " .. table.concat(parts, ", ") .. " }"
+end
+
 return M
