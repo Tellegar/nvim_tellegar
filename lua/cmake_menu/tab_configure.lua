@@ -10,6 +10,7 @@
 --- a multi-line command preview.
 
 local HL = require("cmake_menu.hl")
+local actions = require("cmake_menu.actions")
 local cmake = require("cpp_project.cmake")
 local cmake_presets = require("cpp_project.cmake_presets")
 local float = require("cmake_menu.float")
@@ -252,34 +253,10 @@ end
 -- item actions
 ----------------------------------------------------------------------------------------------------
 
----@class CMenu.Action
----@field key string
----@field key_alts string[]?
----@field action fun(string)
-
--- [sel] -> actions
----@type CMenu.Action[][]
-local item_actions = {}
-
---- adds action(s) to last item
----@param spec CMenu.Action|CMenu.Action[]
-local function item_actions_set(spec)
-	local list = spec.key and { spec } or spec
-	local idx = #r.layout
-	item_actions[idx] = vim.list_extend(item_actions[idx] or {}, list)
-end
-
----@param key string
-local function dispatcher(key)
-	local actions = item_actions[sel]
-	if not actions then return end
-	for _, a in ipairs(actions) do
-		if a.key == key then
-			a.action(key)
-			break
-		end
-	end
-end
+-- per-item key->handler map for this menu; rebuilt each render via acts:begin(r).
+-- The body_item_* functions attach handlers with acts:set() right after they
+-- close an item, and open()'s key mappings fire them with acts:dispatch(sel, k).
+local acts = actions.new()
 
 ----------------------------------------------------------------------------------------------------
 -- body items
@@ -306,7 +283,7 @@ local function body_item_build_dir()
 		{ text=utils.shell_escape(eff_config.build_dir), hl=hl_from_source[eff_source.build_dir]}
 	}
 	r:item_end()
-	item_actions_set{
+	acts:set{
 		{ key="<CR>",
 			action=function()
 				local default = eff_config.build_dir
@@ -336,7 +313,7 @@ local function body_item_build_type()
 	}
 	r:item_end()
 	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
-	item_actions_set{
+	acts:set{
 		{ key="<CR>",
 			action=function()
 				vim.ui.select(
@@ -379,7 +356,7 @@ local function body_item_generator()
 		{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
 	}
 	r:item_end()
-	item_actions_set{
+	acts:set{
 		{ key="<CR>",
 			action=function()
 				vim.ui.select(
@@ -411,7 +388,7 @@ local function body_item_defines()
 			{ text=d.value, hl=hl_from_source[source] },
 		}
 		r:item_end()
-		item_actions_set{
+		acts:set{
 			{ key="<CR>",
 				action=function(dispatched_key)
 					local default = dispatched_key == "i" and "" or d.value
@@ -465,7 +442,7 @@ local function body_item_add_define()
 	r:item_begin()
 	r:line2{{ text="+Add -Define", hl=HL.Action }}
 	r:item_end()
-	item_actions_set{
+	acts:set{
 		{ key="<CR>",
 			action=function()
 				vim.ui.input(
@@ -509,7 +486,7 @@ local function render(m)
 	r.target = m.body
 	r.margin = "  "
 	r:reset()
-	item_actions = {}
+	acts:begin(r)
 
 	eff_config, eff_source = eval_config()
 
@@ -546,7 +523,7 @@ function M.open()
 	local dispatcher_keys = { "<CR>", "<S-CR>", "x" }
 	for _, k in ipairs(dispatcher_keys) do
 		m:map{ lhs=k, rhs=function()
-			dispatcher(k)
+			acts:dispatch(sel, k)
 			render(m)
 		end }
 	end
