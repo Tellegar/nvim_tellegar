@@ -17,7 +17,7 @@ local utils = require("utils")
 local M = {}
 
 -- persists across renders: selection + the current frame's action map
-local sel = 2
+local sel = 1
 local acts = actions.new()
 
 -- expansion state for the source-root dropdown (just the flag; the anchor row
@@ -55,6 +55,8 @@ local function render(m)
 	local r = render_mod.new(m.body)
 	r.margin = "  "
 	acts:begin(r)
+
+	r:line2{""}
 
 	r:item_begin()
 	r:line2{
@@ -94,12 +96,20 @@ local function render(m)
 		session.set_root(nil)
 	end }
 
-	-- the expansion itself: candidate roots (state-dependent) + pick callback
-	dropdown.render(root_dd, r, acts, {
+	-- the expansion itself: candidate roots (state-dependent) + pick callback.
+	-- render() also collapses the dropdown when sel steps off it, returning the
+	-- adjusted sel to select at.
+	sel = dropdown.render(root_dd, r, acts, sel, {
 		choices = root_candidates,
 		text = function(dir) return vim.fn.fnamemodify(dir, ":~") end,
 		on_pick = session.set_root,
 	})
+
+	r:item_begin()
+	r:line2{
+		"dummy"
+	}
+	r:item_end()
 
 	r:render()
 	sel = r:render_selection(sel)
