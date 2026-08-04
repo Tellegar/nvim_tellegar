@@ -13,6 +13,7 @@ local HL = require("cmake_menu.hl")
 local actions = require("cmake_menu.actions")
 local cmake = require("cpp_project.cmake")
 local cmake_presets = require("cpp_project.cmake_presets")
+local dropdown = require("cmake_menu.dropdown")
 local float = require("cmake_menu.float")
 local render_mod = require("cmake_menu.render")
 local tabs = require("cmake_menu.tabs")
@@ -24,6 +25,11 @@ local M = {}
 -- Module-level so it survives across renders/tab switches; clamped in render()
 -- since #layout isn't known until then.
 local sel = 1
+
+-- expansion state for the inline dropdowns (bools the tab owns; the anchor rows
+-- and their toggle actions are rendered in the body_item_* functions below).
+local build_type_open = false
+local generator_open = false
 
 local r = render_mod.new()
 
@@ -312,43 +318,39 @@ local function body_item_build_type()
 		{ text=value or "(unset)", hl=hl_from_source[source] }
 	}
 	r:item_end()
-	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
+	-- <CR> toggles the dropdown; x clears the value
 	acts:set{
-		{ key="<CR>",
-			action=function()
-				vim.ui.select(
-					choices,
-					{ prompt = "Select build type:"},
-					function(choice)
-						if not choice then return end
-						if choice == choices[1] then choice = nil end
-						define_set(config, "CMAKE_BUILD_TYPE", choice)
-					end
-				)
-			end },
-		{ key="x",
-			action=function()
-				define_clear(config, "CMAKE_BUILD_TYPE")
-			end },
+		{ key="<CR>", action=function() build_type_open = not build_type_open end },
+		{ key="x",    action=function() define_clear(config, "CMAKE_BUILD_TYPE") end },
+	}
+	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
+	build_type_open, sel = dropdown.render{
+		open = build_type_open,
+		sel = sel,
+		choices = function() return choices end,
+		on_pick = function(choice)
+			if choice == choices[1] then choice = nil end
+			define_set(config, "CMAKE_BUILD_TYPE", choice)
+			build_type_open = false
+		end,
 	}
 end
 
-local function body_item_generator()
-	--cmake.GENERATORS
-	--local choices = { "(unset)", "Ninja", "Ninja Multi-Config", "Unix Makefiles" }
-
-	local choices, values = { "(unset)" }, { nil }
+--- (unset) plus each known generator, labelled with its cmake-default marker and
+--- -G flag; the picked entry's `value` is the bare generator name (nil = unset).
+---@return { label: string, value: string? }[]
+local function generator_choices()
+	local list = { { label = "(unset)" } }
 	for _, gen in ipairs(cmake.GENERATORS) do
-		local choice = gen.name
-		if gen.default then
-			choice = choice.." (cmake default)"
-		end
-		if gen.flag then
-			choice = choice.." "..gen.flag
-		end
-		choices[#choices+1] = choice
-		values[#values+1] = gen.name
+		local label = gen.name
+		if gen.default then label = label .. " (cmake default)" end
+		if gen.flag then label = label .. " " .. gen.flag end
+		list[#list + 1] = { label = label, value = gen.name }
 	end
+	return list
+end
+
+local function body_item_generator()
 	r:item_begin()
 	r:line2{
 		"generator",
@@ -356,23 +358,20 @@ local function body_item_generator()
 		{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
 	}
 	r:item_end()
+	-- <CR> toggles the dropdown; x clears the value
 	acts:set{
-		{ key="<CR>",
-			action=function()
-				vim.ui.select(
-					choices,
-					{ prompt = "build_type"},
-					function(choice)
-						if not choice then return end
-						if choice == choices[1] then choice = nil end
-						config.generator = choice
-					end
-				)
-			end },
-		{ key="x",
-			action=function()
-				config.generator = nil
-			end },
+		{ key="<CR>", action=function() generator_open = not generator_open end },
+		{ key="x",    action=function() config.generator = nil end },
+	}
+	generator_open, sel = dropdown.render{
+		open = generator_open,
+		sel = sel,
+		choices = generator_choices,
+		text = function(c) return c.label end,
+		on_pick = function(c)
+			config.generator = c.value
+			generator_open = false
+		end,
 	}
 end
 

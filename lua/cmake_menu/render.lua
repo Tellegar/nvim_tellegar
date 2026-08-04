@@ -27,10 +27,11 @@ local HL = require("cmake_menu.hl")
 
 local M = {}
 
---- The render context of the current frame: the one most recently handed out by
---- M.new(). Set so modules that draw into the frame (e.g. cmake_menu.dropdown)
---- can reach it without the tab threading `r` through every call. Only one menu
---- renders at a time, so a single slot suffices.
+--- The render context of the current frame: the one most recently started, via
+--- M.new() (fresh-per-pass tabs) or R:reset() (tabs that reuse one context). Set
+--- so modules that draw into the frame (e.g. cmake_menu.dropdown) can reach it
+--- without the tab threading `r` through every call. Only one menu renders at a
+--- time, so a single slot suffices.
 ---@type CMenu.Render?
 M.current = nil
 
@@ -69,6 +70,7 @@ function R:reset()
 	self.marks = {}
 	self.layout = {}
 	self._item_start = nil
+	M.current = self
 end
 
 --- Accumulate one line, margin-prefixed. Returns its 0-based row.
