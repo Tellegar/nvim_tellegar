@@ -491,7 +491,7 @@ local function render(m)
 	eff_config, eff_source = eval_config()
 
 	-- TODO detect preset and show it as an seletable item
-	--      this probably needs to wait till the invocation of this tab is clear (as in thought out)
+	--      this probably needs to wait till the invocation of this tab is clear
 
 	r:line("")
 	body_item_build_dir()
