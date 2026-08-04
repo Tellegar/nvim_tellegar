@@ -16,13 +16,17 @@ local utils = require("utils")
 
 local M = {}
 
--- persists across renders: selection + the current frame's action map
-local sel = 1
+-- Tab state, passed by reference into the dropdown so it can mutate it in place
+-- (see cmake_menu.dropdown). Persists across renders.
+--   sel     - current selection index
+--   dd_root - expansion bool for the source-root dropdown (the anchor row and
+--             its toggle action are rendered below, in the tab itself).
+local state = {
+	sel = 1,
+	dd_root = false,
+}
+-- the current frame's action map; persists across renders
 local acts = actions.new()
-
--- expansion state for the source-root dropdown: just a bool the tab owns. The
--- anchor row and its toggle action are rendered below, in the tab itself.
-local root_open = false
 
 --- Candidate roots to override with: session.dir() and its ancestors, nearest
 --- first. Recomputed each render (depends on session.buf), passed to the dropdown
@@ -40,13 +44,17 @@ local function root_candidates()
 	return dirs
 end
 
+----------------------------------------------------------------------------------------------------
+-- render
+----------------------------------------------------------------------------------------------------
+
 ---@param m CMenu.Float
 local function render(m)
 	tabs.render(m.header)
 
 	-- footer: key hint
 	do
-		local text = " tab/S-tab switch   q quit"
+		local text = " tab/S-tab switch   j/k move   q quit"
 		m.footer:set_lines({ text })
 		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
 	end
@@ -56,8 +64,7 @@ local function render(m)
 	r.margin = "  "
 	acts:begin(r)
 
-	r:line2{""}
-
+	r:line("")
 	r:item_begin()
 	r:line2{
 		{ text="source root" },
@@ -90,22 +97,22 @@ local function render(m)
 	r:item_end()
 	-- the source-root row is the expandable anchor; <CR> toggles its dropdown
 	acts:set{ key = "<CR>", action = function()
-		root_open = not root_open
+		state.dd_root = not state.dd_root
 	end }
 	acts:set{ key = "x", action = function()
 		session.set_root(nil)
 	end }
 
 	-- the expansion itself: candidate roots (state-dependent) + pick callback.
-	-- render() also collapses the dropdown when sel steps off it, returning the
-	-- (possibly-collapsed) open flag and the adjusted sel to select at. on_pick
-	-- does the pick and closes the dropdown (the tab owns the flag).
-	root_open, sel = dropdown.render{
-		open = root_open,
-		sel = sel,
+	-- render() also collapses the dropdown when state.sel steps off it, writing
+	-- the (possibly-collapsed) open flag and the adjusted sel back into state.
+	-- on_pick does the pick and closes the dropdown (the tab owns the flag).
+	dropdown.render{
+		state = state,
+		open = "dd_root",
 		choices = root_candidates,
 		text = function(dir) return vim.fn.fnamemodify(dir, ":~") end,
-		on_pick = function(dir) session.set_root(dir); root_open = false end,
+		on_pick = function(dir) session.set_root(dir); state.dd_root = false end,
 	}
 
 	r:item_begin()
@@ -115,13 +122,17 @@ local function render(m)
 	r:item_end()
 
 	r:render()
-	sel = r:render_selection(sel)
+	r:render_selection(state)
 end
+
+----------------------------------------------------------------------------------------------------
+-- open
+----------------------------------------------------------------------------------------------------
 
 function M.open()
 	local m
 	local function move(delta)
-		sel = sel + delta
+		state.sel = state.sel + delta
 		m:render()
 	end
 	m = float.open{ render = render }
@@ -130,8 +141,8 @@ function M.open()
 		{ lhs="k",      rhs=function() move(-1) end },
 		{ lhs="<Down>", rhs=function() move(1) end },
 		{ lhs="<Up>",   rhs=function() move(-1) end },
-		{ lhs="<CR>",   rhs=function() acts:dispatch(sel, "<CR>"); m:render() end },
-		{ lhs="x",      rhs=function() acts:dispatch(sel, "x"); m:render() end },
+		{ lhs="<CR>",   rhs=function() acts:dispatch(state.sel, "<CR>"); m:render() end },
+		{ lhs="x",      rhs=function() acts:dispatch(state.sel, "x"); m:render() end },
 	}
 	m:map(tabs.mappings())
 	return m

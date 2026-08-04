@@ -16,10 +16,14 @@ local tabs = require("cmake_menu.tabs")
 
 local M = {}
 
--- 1-based index into this render's `layout` (selectable items, top to bottom).
--- Module-level so it survives across renders/tab switches; clamped in render()
--- since #layout isn't known until then.
-local sel = 1
+-- Tab state. `sel` is a 1-based index into this render's `layout` (selectable
+-- items, top to bottom); a table (not a bare value) so it can be passed by
+-- reference to render_selection(), which clamps it in place. Module-level so it
+-- survives across renders/tab switches; clamped in render() since #layout isn't
+-- known until then.
+local state = {
+	sel = 1,
+}
 
 local r = render_mod.new()
 
@@ -102,7 +106,7 @@ local function render(m)
 	item("Open ccmake")
 
 	r:render()
-	sel = r:render_selection(sel)
+	r:render_selection(state)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -112,7 +116,7 @@ end
 function M.open()
 	local m
 	local function move(delta)
-		sel = sel + delta
+		state.sel = state.sel + delta
 		m:render()
 	end
 	m = float.open{ render = render }

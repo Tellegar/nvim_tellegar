@@ -14,9 +14,9 @@
 ---   r:mark(nil, 0, { end_col = 5, hl_group = HL.Value })
 ---   r:item_end()
 ---   r:render()
----   r:render_selection(sel)
+---   r:render_selection(state)   -- state.sel read + clamped in place
 ---
---- render() only flushes lines+marks; render_selection(sel) is a separate,
+--- render() only flushes lines+marks; render_selection(state) is a separate,
 --- optional step for tabs that track a `layout` of selectable items (a tab
 --- with no selection concept just never calls it).
 ---
@@ -61,16 +61,6 @@ function M.new(pane)
 	}, R)
 	M.current = r
 	return r
-end
-
---- Clear accumulated state for a fresh build against `self.target`. Only needed
---- when a render context is reused across renders; prefer a new() per pass.
-function R:reset()
-	self.lines = {}
-	self.marks = {}
-	self.layout = {}
-	self._item_start = nil
-	M.current = self
 end
 
 --- Accumulate one line, margin-prefixed. Returns its 0-based row.
@@ -211,13 +201,16 @@ function R:render()
 	end
 end
 
---- Highlight every row of the sel-th selectable item (1-based, clamped to
---- #self.layout). Call after render(): set_lines() would otherwise wipe it.
----@param sel integer
----@return integer clamped
-function R:render_selection(sel)
+--- Highlight every row of the state.sel-th selectable item (1-based, clamped to
+--- #self.layout), writing the clamped index back into state.sel. Pass the tab's
+--- state table (anything with a `sel` field): the index is read and clamped in
+--- place, by reference, rather than returned. Call after render(): set_lines()
+--- would otherwise wipe it.
+---@param state { sel: integer }
+function R:render_selection(state)
 	assert(self.target, "render.target must be set before render_selection()")
-	sel = math.max(1, math.min(sel, #self.layout))
+	local sel = math.max(1, math.min(state.sel, #self.layout))
+	state.sel = sel
 	local rows = self.layout[sel]
 	if rows then
 		for _, r in ipairs(rows) do
@@ -228,7 +221,6 @@ function R:render_selection(sel)
 			})
 		end
 	end
-	return sel
 end
 
 return M

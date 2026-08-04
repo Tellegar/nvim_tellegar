@@ -21,17 +21,22 @@ local utils = require("utils")
 
 local M = {}
 
--- 1-based index into this render's `layout` (selectable items, top to bottom).
--- Module-level so it survives across renders/tab switches; clamped in render()
--- since #layout isn't known until then.
-local sel = 1
-
--- expansion state for the inline dropdowns (bools the tab owns; the anchor rows
--- and their toggle actions are rendered in the body_item_* functions below).
-local build_type_open = false
-local generator_open = false
-
-local r = render_mod.new()
+-- Tab state, passed by reference into the dropdown so it can mutate it in place
+-- (see cmake_menu.dropdown). Module-level so it survives across renders/tab
+-- switches.
+--   sel            - 1-based index into this render's `layout` (selectable items,
+--                    top to bottom); clamped in render() since #layout isn't
+--                    known until then.
+--   dd_build_type,
+--   dd_generator   - expansion bools for the inline dropdowns (the anchor rows
+--                    and their toggle actions are rendered in the body_item_*
+--                    functions below).
+local state = {
+	sel = 1,
+	dd_build_type = false,
+	dd_generator = false,
+}
+local r
 
 ----------------------------------------------------------------------------------------------------
 -- state
@@ -320,18 +325,18 @@ local function body_item_build_type()
 	r:item_end()
 	-- <CR> toggles the dropdown; x clears the value
 	acts:set{
-		{ key="<CR>", action=function() build_type_open = not build_type_open end },
+		{ key="<CR>", action=function() state.dd_build_type = not state.dd_build_type end },
 		{ key="x",    action=function() define_clear(config, "CMAKE_BUILD_TYPE") end },
 	}
 	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
-	build_type_open, sel = dropdown.render{
-		open = build_type_open,
-		sel = sel,
+	dropdown.render{
+		state = state,
+		open = "dd_build_type",
 		choices = function() return choices end,
 		on_pick = function(choice)
 			if choice == choices[1] then choice = nil end
 			define_set(config, "CMAKE_BUILD_TYPE", choice)
-			build_type_open = false
+			state.dd_build_type = false
 		end,
 	}
 end
@@ -360,17 +365,17 @@ local function body_item_generator()
 	r:item_end()
 	-- <CR> toggles the dropdown; x clears the value
 	acts:set{
-		{ key="<CR>", action=function() generator_open = not generator_open end },
+		{ key="<CR>", action=function() state.dd_generator = not state.dd_generator end },
 		{ key="x",    action=function() config.generator = nil end },
 	}
-	generator_open, sel = dropdown.render{
-		open = generator_open,
-		sel = sel,
+	dropdown.render{
+		state = state,
+		open = "dd_generator",
 		choices = generator_choices,
 		text = function(c) return c.label end,
 		on_pick = function(c)
 			config.generator = c.value
-			generator_open = false
+			state.dd_generator = false
 		end,
 	}
 end
@@ -454,7 +459,7 @@ local function body_item_add_define()
 							return
 						end
 						define_set(config, name, value)
-						sel = sel + 1
+						state.sel = state.sel + 1
 					end)
 			end },
 	}
@@ -482,9 +487,8 @@ local function render(m)
 	end
 
 	-- body
-	r.target = m.body
+	r = render_mod.new(m.body)
 	r.margin = "  "
-	r:reset()
 	acts:begin(r)
 
 	eff_config, eff_source = eval_config()
@@ -505,7 +509,8 @@ local function render(m)
 	body_item_command_preview()
 
 	r:render()
-	sel = r:render_selection(sel)
+	r:render_selection(state)
+	r = nil
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -515,22 +520,18 @@ end
 function M.open()
 	local m
 	local function move(delta)
-		sel = sel + delta
+		state.sel = state.sel + delta
 		m:render()
 	end
 	m = float.open{ render = render }
-	local dispatcher_keys = { "<CR>", "<S-CR>", "x" }
-	for _, k in ipairs(dispatcher_keys) do
-		m:map{ lhs=k, rhs=function()
-			acts:dispatch(sel, k)
-			render(m)
-		end }
-	end
 	m:map{
 		{ lhs="j",      rhs=function() move(1) end },
 		{ lhs="k",      rhs=function() move(-1) end },
 		{ lhs="<Down>", rhs=function() move(1) end },
 		{ lhs="<Up>",   rhs=function() move(-1) end },
+		{ lhs="<CR>",   rhs=function() acts:dispatch(state.sel, "<CR>"); m:render() end },
+		{ lhs="<S-CR>", rhs=function() acts:dispatch(state.sel, "<S-CR>"); m:render() end },
+		{ lhs="x",      rhs=function() acts:dispatch(state.sel, "x"); m:render() end },
 	}
 	m:map(tabs.mappings())
 	return m
