@@ -27,6 +27,13 @@ local HL = require("cmake_menu.hl")
 
 local M = {}
 
+--- The render context of the current frame: the one most recently handed out by
+--- M.new(). Set so modules that draw into the frame (e.g. cmake_menu.dropdown)
+--- can reach it without the tab threading `r` through every call. Only one menu
+--- renders at a time, so a single slot suffices.
+---@type CMenu.Render?
+M.current = nil
+
 ---@class CMenu.Render
 ---@field target CMenu.Pane?      -- pane to flush into; set before reset()/line()/mark()
 ---@field margin string           -- prefix applied by line(); default ""
@@ -43,7 +50,7 @@ R.__index = R
 ---@param pane CMenu.Pane?
 ---@return CMenu.Render
 function M.new(pane)
-	return setmetatable({
+	local r = setmetatable({
 		target = pane,
 		margin = "",
 		lines = {},
@@ -51,6 +58,8 @@ function M.new(pane)
 		layout = {},
 		_item_start = nil, -- row `lines` was at when item_begin() ran; nil if not mid-item
 	}, R)
+	M.current = r
+	return r
 end
 
 --- Clear accumulated state for a fresh build against `self.target`. Only needed

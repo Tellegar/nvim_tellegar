@@ -22,6 +22,13 @@
 
 local M = {}
 
+--- The action map of the current frame: the one whose begin() ran most recently.
+--- Set so modules that draw selectable items (e.g. cmake_menu.dropdown) can
+--- attach handlers without the tab threading `acts` through every call. Only one
+--- menu renders at a time, so a single slot suffices.
+---@type CMenu.Actions?
+M.current = nil
+
 ---@class CMenu.Action
 ---@field key string
 ---@field action fun(key: string)  -- receives the pressed key (so alt keys can branch)
@@ -43,6 +50,7 @@ end
 function A:begin(r)
 	self._r = r
 	self._map = {}
+	M.current = self
 end
 
 --- Attach handler(s) to the item just closed by r:item_end(). `spec` is one

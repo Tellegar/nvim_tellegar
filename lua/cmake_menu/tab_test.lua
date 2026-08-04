@@ -20,9 +20,9 @@ local M = {}
 local sel = 1
 local acts = actions.new()
 
--- expansion state for the source-root dropdown (just the flag; the anchor row
--- and its toggle action are rendered below, in the tab itself)
-local root_dd = { expanded = false }
+-- expansion state for the source-root dropdown: just a bool the tab owns. The
+-- anchor row and its toggle action are rendered below, in the tab itself.
+local root_open = false
 
 --- Candidate roots to override with: session.dir() and its ancestors, nearest
 --- first. Recomputed each render (depends on session.buf), passed to the dropdown
@@ -90,7 +90,7 @@ local function render(m)
 	r:item_end()
 	-- the source-root row is the expandable anchor; <CR> toggles its dropdown
 	acts:set{ key = "<CR>", action = function()
-		root_dd.expanded = not root_dd.expanded
+		root_open = not root_open
 	end }
 	acts:set{ key = "x", action = function()
 		session.set_root(nil)
@@ -98,12 +98,15 @@ local function render(m)
 
 	-- the expansion itself: candidate roots (state-dependent) + pick callback.
 	-- render() also collapses the dropdown when sel steps off it, returning the
-	-- adjusted sel to select at.
-	sel = dropdown.render(root_dd, r, acts, sel, {
+	-- (possibly-collapsed) open flag and the adjusted sel to select at. on_pick
+	-- does the pick and closes the dropdown (the tab owns the flag).
+	root_open, sel = dropdown.render{
+		open = root_open,
+		sel = sel,
 		choices = root_candidates,
 		text = function(dir) return vim.fn.fnamemodify(dir, ":~") end,
-		on_pick = session.set_root,
-	})
+		on_pick = function(dir) session.set_root(dir); root_open = false end,
+	}
 
 	r:item_begin()
 	r:line2{
