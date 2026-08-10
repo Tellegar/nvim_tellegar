@@ -20,6 +20,24 @@
 
 require("lsp.shrink_unnecessary").setup()
 
+-- neocmakelsp (mason-installed, auto-enabled by mason-lspconfig) ships its own
+-- lint: command case plus "[C0301] Line too long". The server has no per-rule
+-- switch (only lint.enable wholesale, or .neocmakelint.toml's line_max_words),
+-- so C0301 is dropped here instead, client-side, leaving the rest of the lint on.
+vim.lsp.config("neocmakelsp", {
+	handlers = {
+		["textDocument/publishDiagnostics"] = function(err, result, ctx, config)
+			if result and result.diagnostics then
+				result.diagnostics = vim.tbl_filter(function(d)
+					return d.code ~= "C0301"
+						and not (d.message or ""):find("[C0301]", 1, true)
+				end, result.diagnostics)
+			end
+			return vim.lsp.handlers["textDocument/publishDiagnostics"](err, result, ctx, config)
+		end,
+	},
+})
+
 -- vim.lsp.config("qmlls", {
 -- 	cmd = {"qmlls", "-E"}
 -- })
