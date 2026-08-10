@@ -25,7 +25,7 @@ local state = {
 	sel = 1,
 }
 
-local r = render_mod.new()
+local r
 
 ----------------------------------------------------------------------------------------------------
 -- state (placeholder front-page data)
@@ -49,9 +49,8 @@ local function render(m)
 	end
 
 	-- body
-	r.target = m.body
+	r = render_mod.new(m.body)
 	r.margin = "  "
-	r:reset()
 
 	-- "name ──────" section divider (heading text + a rule filling the width)
 	local function section(name)
@@ -107,6 +106,7 @@ local function render(m)
 
 	r:render()
 	r:render_selection(state)
+	r = nil
 end
 
 ----------------------------------------------------------------------------------------------------
