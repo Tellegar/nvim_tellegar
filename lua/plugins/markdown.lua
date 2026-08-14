@@ -42,7 +42,16 @@ return {
 			bullet = {
 				-- icons = { '●', '○', '◆', '◇' },
 				icons = { '◇' },
-			}
+			},
+			-- Don't render in Claude Code's scratch prompt buffers, e.g.
+			-- /tmp/claude-1000/claude-prompt-<uuid>.md -- these are edited as
+			-- plain text, and the concealing gets in the way.
+			-- Only files sitting directly in /tmp/claude-*/ are matched, so
+			-- session scratchpad notes further down the tree still render.
+			ignore = function(buf)
+				local name = vim.api.nvim_buf_get_name(buf)
+				return name:match("^/tmp/claude%-[^/]+/claude%-[^/]+%.md$") ~= nil
+			end,
 		},
 	}
 }
