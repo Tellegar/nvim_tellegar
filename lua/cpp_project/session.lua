@@ -305,6 +305,24 @@ function M.unselect()
 	M.select({})
 end
 
+--- Forget `cfg` entirely - not un-picking it, removing the saved entry.
+--- Clears the selection first if `cfg` was selected (a deleted entry can't
+--- stay selected), then drops it from `configs` and saves. A no-op if `cfg`
+--- isn't a member of `configs` (a bare preset selection has nothing to
+--- remove; use unselect() for that).
+---@param cfg CMake.Config
+function M.remove(cfg)
+	if M.config == cfg then
+		M.config = {}
+	end
+	local i = index_of(cfg)
+	if not i then
+		return
+	end
+	table.remove(M.configs, i)
+	M.save()
+end
+
 ----------------------------------------------------------------------------------------------------
 -- writing
 ----------------------------------------------------------------------------------------------------
