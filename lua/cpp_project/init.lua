@@ -25,15 +25,34 @@
 
 local M = {}
 
--- Root stores, highest priority first. Placeholders until persistence lands:
+-- Root stores, highest priority first:
 --   session_roots  - manual "use this root for now" overrides, in-memory only.
---   known_projects - saved/remembered roots, to be persisted under
---                    stdpath("state") (not scattered across each repo).
+--   known_projects - the roots cpp_project.project_store has saved configs
+--                    for, mirrored into memory by refresh_known_projects().
+--                    Derived from disk, never written by hand: a root is
+--                    "known" exactly when it's tracked in projects.json.
 -- Both are keyed by root path; find_root climbs a file's ancestors looking for
 -- a hit before falling back to marker-sniffing, since CMakeLists.txt / build
 -- dirs exist at multiple nesting levels and are never fully reliable.
+--
+-- known_projects is what makes a saved project resolve to the *same* root
+-- across restarts even when markers would miss it (no .git/CMakePresets.json)
+-- or would pick the wrong level.
 M.session_roots = {} ---@type table<string, true>
-M.known_projects = {} ---@type table<string, any>
+M.known_projects = {} ---@type table<string, true>
+
+--- Re-mirror project_store's tracked roots into known_projects. Cheap to call
+--- repeatedly - project_store.read() only re-parses when the file's mtime has
+--- moved - so callers can use it as "make sure this is current" before
+--- resolving a root or rendering the menu, and pick up another instance's
+--- saves/removals in the process.
+function M.refresh_known_projects()
+	local known = {}
+	for _, root in ipairs(require("cpp_project.project_store").roots()) do
+		known[root] = true
+	end
+	M.known_projects = known
+end
 
 --- Nearest ancestor directory of `path` that is a key in `set`, or nil.
 ---@param path string
