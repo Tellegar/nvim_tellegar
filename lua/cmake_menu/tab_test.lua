@@ -7,6 +7,7 @@
 
 local HL = require("cmake_menu.hl")
 local actions = require("cmake_menu.actions")
+local cmake_presets = require("cpp_project.cmake_presets")
 local dropdown = require("cmake_menu.dropdown")
 local float = require("cmake_menu.float")
 local render_mod = require("cmake_menu.render")
@@ -18,15 +19,158 @@ local M = {}
 
 -- Tab state, passed by reference into the dropdown so it can mutate it in place
 -- (see cmake_menu.dropdown). Persists across renders.
---   sel     - current selection index
---   dd_root - expansion bool for the source-root dropdown (the anchor row and
---             its toggle action are rendered below, in the tab itself).
+--   sel       - current selection index
+--   dd_root   - expansion bool for the source-root dropdown (the anchor row and
+--               its toggle action are rendered below, in the tab itself).
+--   dd_preset - expansion bool for the cmake-preset dropdown (see body_item_preset).
 local state = {
 	sel = 1,
 	dd_root = false,
+	dd_preset = false,
 }
 -- the current frame's action map; persists across renders
 local acts = actions.new()
+
+----------------------------------------------------------------------------------------------------
+-- build dir config: cmake_preset_name -> build_dir, same value/default/preset
+-- source tracking as tab_configure.eval_config, but scoped to just these two
+-- fields since that's all clangd's --compile-commands-dir needs. Manual
+-- override (config.build_dir set directly, bypassing any preset) covers a
+-- not-yet-created build dir - vim.ui.input just takes a typed path.
+----------------------------------------------------------------------------------------------------
+
+---@type CMake.Config
+local config = {
+	--cmake_preset_name = nil,
+	--build_dir = nil,
+}
+
+local Source = {
+	value = "value",
+	default = "default",
+	preset = "preset",
+}
+
+---@param root string
+---@return CMake.Config eff
+---@return table<string, string> source Source.* per field
+local function eval_config(root)
+	local eff, source = {}, {}
+
+	local preset_resolved = config.cmake_preset_name
+		and cmake_presets.resolve(root, config.cmake_preset_name)
+
+	if config.cmake_preset_name and preset_resolved then
+		eff.cmake_preset_name = config.cmake_preset_name
+		source.cmake_preset_name = Source.value
+	else
+		eff.cmake_preset_name = nil
+		source.cmake_preset_name = Source.default
+	end
+
+	if config.build_dir then
+		eff.build_dir = config.build_dir
+		source.build_dir = Source.value
+	elseif preset_resolved and preset_resolved.build_dir then
+		eff.build_dir = preset_resolved.build_dir
+		source.build_dir = Source.preset
+	else
+		eff.build_dir = "build/debug"
+		source.build_dir = Source.default
+	end
+
+	return eff, source
+end
+
+local hl_from_source = {
+	value = HL.Value,
+	default = HL.Dim,
+	preset = HL.Dim,
+}
+
+----------------------------------------------------------------------------------------------------
+-- body items: cmake preset + build dir
+----------------------------------------------------------------------------------------------------
+
+---@param r CMenu.Render
+---@param eff_config CMake.Config
+---@param eff_source table<string, string>
+local function body_item_preset(r, eff_config, eff_source)
+	r:item_begin()
+	r:line2{
+		"cmake preset",
+		{ fill=true },
+		{ text=eff_config.cmake_preset_name or "(unset)", hl=hl_from_source[eff_source.cmake_preset_name] },
+	}
+	r:item_end()
+	acts:set{
+		{ key="<CR>", action=function() state.dd_preset = not state.dd_preset end },
+		{ key="x",    action=function() config.cmake_preset_name = nil end },
+	}
+	dropdown.render{
+		state = state,
+		open = "dd_preset",
+		choices = function()
+			local list = { { name = nil, display = "(unset)" } }
+			for _, p in ipairs(cmake_presets.list(session.root)) do
+				list[#list + 1] = p
+			end
+			return list
+		end,
+		text = function(p) return p.display end,
+		on_pick = function(p)
+			config.cmake_preset_name = p.name
+			state.dd_preset = false
+		end,
+	}
+end
+
+--- `path` relative to `root` when it's a descendant of it (so display never
+--- grows a leading "../..") - otherwise `path` unchanged, absolute.
+---@param root string?
+---@param path string
+---@return string
+local function relative_to_root(root, path)
+	if not root then return path end
+	local prefix = vim.fs.normalize(root):gsub("/+$", "") .. "/"
+	local norm = vim.fs.normalize(path)
+	if norm:sub(1, #prefix) == prefix then
+		return norm:sub(#prefix + 1)
+	end
+	return path
+end
+
+---@param r CMenu.Render
+---@param eff_config CMake.Config
+---@param eff_source table<string, string>
+local function body_item_build_dir(r, eff_config, eff_source)
+	r:item_begin()
+	r:line2{
+		"build dir",
+		{ fill=true },
+		{
+			text=relative_to_root(session.root, eff_config.build_dir),
+			hl=hl_from_source[eff_source.build_dir],
+		},
+	}
+	r:item_end()
+	acts:set{
+		{ key="<CR>",
+			action=function()
+				vim.ui.input(
+					{ prompt = "build dir: ", default = eff_config.build_dir },
+					function(v)
+						if not v then return end
+						config.build_dir = (v ~= "") and v or nil
+					end
+				)
+			end },
+		{ key="x",
+			action=function()
+				config.build_dir = nil
+			end },
+	}
+end
 
 --- Candidate roots to override with: session.dir() and its ancestors, nearest
 --- first. Recomputed each render (depends on session.buf), passed to the dropdown
@@ -115,11 +259,15 @@ local function render(m)
 		on_pick = function(dir) session.set_root(dir); state.dd_root = false end,
 	}
 
-	r:item_begin()
-	r:line2{
-		"dummy"
-	}
-	r:item_end()
+	if session.root then
+		local eff_config, eff_source = eval_config(session.root)
+
+		r:line("")
+		if cmake_presets.available(session.root) then
+			body_item_preset(r, eff_config, eff_source)
+		end
+		body_item_build_dir(r, eff_config, eff_source)
+	end
 
 	r:render()
 	r:render_selection(state)
