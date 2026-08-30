@@ -16,11 +16,27 @@
 -- frame. `choices` is a function because the choices depend on current state
 -- (e.g. the candidate roots for the buffer), recomputed each render.
 --
--- Collapse has three triggers, each closing the flag directly:
+-- Collapse has three triggers:
 --   * navigating off the span   -> render() sets state[open]=false
 --   * <CR> on the anchor (toggle)-> the tab's own action flips state[open]
---   * <CR> on a choice (pick)    -> the tab's on_pick sets state[open]=false, so
---                                   it does the pick AND closes
+--   * a choice's callback calling ctx.close() (see below)
+--
+-- What a callback leaves selected is the *caller's* decision, not this
+-- module's. The obvious default ("a pick closes and returns to the anchor")
+-- is only right for a terminal pick; a delete instead wants to stay put so the
+-- next entry slides under the cursor (or step back by one when there's no
+-- next entry to slide up - see cmake_menu.tab_project's config_on_delete).
+-- Rather than grow flags for each, every callback receives a `ctx` describing
+-- where it sits and holding the two moves worth naming:
+--
+--   ctx.anchor    -- selectable index of the anchor row this list hangs under
+--   ctx.index     -- 1-based index of this choice within the list
+--   ctx.count     -- number of choices this frame
+--   ctx.close()   -- collapse, and put the selection back on the anchor
+--   ctx.focus(i)  -- stay open, select the i-th choice (0 = the anchor row)
+--
+-- Doing nothing keeps the dropdown open with the selection where it was -
+-- which, after a delete, is the row that shifted up into the deleted slot.
 --
 --   local state = { sel = 1, dd_root = false }     -- module scope, owned by the tab
 --   -- in render(m), right after drawing the anchor item + its item_end():
@@ -30,7 +46,7 @@
 --     open    = "dd_root",                          -- key in state for this flag
 --     choices = function() return candidates() end, -- recomputed each render
 --     text    = function(c) return c.label end,     -- optional, default tostring
---     on_pick = function(c) pick(c); state.dd_root = false end,  -- pick AND close
+--     on_pick = function(c, ctx) pick(c); ctx.close() end,
 --   }
 
 local render_mod = require("cmake_menu.render")
@@ -45,7 +61,20 @@ local M = {}
 ---@field choices fun(): any[]               -- current choices, recomputed each render
 ---@field text (fun(c: any): string)?        -- choice -> display text (default tostring)
 ---@field tag (fun(c: any): string?)?        -- choice -> right-aligned dim label (e.g. its source), nil to omit
----@field on_pick fun(c: any)                -- picks the choice; should also close (state[open]=false)
+---@field on_pick fun(c: any, ctx: CMenu.DropdownCtx)    -- picks the choice; decides what stays selected via ctx (see the header)
+---@field deletable (fun(c: any): boolean)?              -- choice -> whether "x" applies to it (e.g. false for a cmake preset, which isn't a stored entry); required alongside on_delete, otherwise ignored
+---@field on_delete (fun(c: any, ctx: CMenu.DropdownCtx))? -- deletes the choice's saved entry; only bound to "x" where deletable(c) is true
+
+--- Where a choice sits, and the selection moves worth naming. Handed to
+--- on_pick/on_delete so the caller - not this module - decides what the
+--- dropdown leaves selected. Doing nothing with it keeps the list open and the
+--- selection unmoved.
+---@class CMenu.DropdownCtx
+---@field anchor integer            -- selectable index of the anchor row this list hangs under
+---@field index integer             -- 1-based index of this choice within the list
+---@field count integer             -- number of choices rendered this frame
+---@field close fun()               -- collapse the list, selection back on the anchor
+---@field focus fun(i: integer)     -- keep it open, select the i-th choice (0 = the anchor)
 
 --- Render the choice list under an (already-drawn) anchor row while open, and
 --- auto-collapse when `state.sel` has moved off the dropdown's span (the anchor
@@ -59,7 +88,7 @@ local M = {}
 --- it. Moving up out of the span leaves the index unchanged (the choices sit
 --- below the anchor); moving down past the last choice shifts it up by `count`,
 --- since those rows are collapsed away above the new target and never drawn this
---- frame. Picking returns focus to the anchor for the same reason.
+--- frame. ctx.close() adjusts the same way, and for the same reason.
 ---@param o CMenu.DropdownArgs
 function M.render(o)
 	local state = o.state
@@ -78,7 +107,7 @@ function M.render(o)
 		return
 	end
 	local text = o.text or tostring
-	for _, choice in ipairs(choices) do
+	for i, choice in ipairs(choices) do
 		r:item_begin()
 		local tag = o.tag and o.tag(choice)
 		if tag then
@@ -87,9 +116,23 @@ function M.render(o)
 			r:line2{ "  ", { text = text(choice) } }
 		end
 		r:item_end()
-		-- picking returns focus to the anchor row (its choices are about to
-		-- collapse away, so leaving sel on the choice would land it elsewhere)
-		acts:set{ key = "<CR>", desc = "select", action = function() o.on_pick(choice); state.sel = anchor end }
+		---@type CMenu.DropdownCtx
+		local ctx = {
+			anchor = anchor,
+			index = i,
+			count = count,
+			close = function()
+				state[o.open] = false
+				state.sel = anchor
+			end,
+			focus = function(n)
+				state.sel = anchor + n
+			end,
+		}
+		acts:set{ key = "<CR>", desc = "select", action = function() o.on_pick(choice, ctx) end }
+		if o.on_delete and (not o.deletable or o.deletable(choice)) then
+			acts:set{ key = "x", desc = "delete", action = function() o.on_delete(choice, ctx) end }
+		end
 	end
 end
 
