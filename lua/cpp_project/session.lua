@@ -340,6 +340,15 @@ end
 ---
 --- Deliberately the only path that starts tracking, alongside a manage-entries
 --- UI: nothing here tracks a project on its own.
+---
+--- Re-resolves afterwards, because tracking changes the answer: the root is
+--- now in known_projects, which outranks marker-sniffing, so `found_via` would
+--- otherwise keep reporting the marker that got us here (".git") long after
+--- that stopped being why this root wins. Re-resolving also re-reads
+--- projects.json, so anything another instance wrote alongside our own entry
+--- is picked up in the same pass. It can't clobber what we just saved: the
+--- root is unchanged, so resolve() keeps the in-memory config rather than
+--- reloading over it.
 ---@return boolean written
 function M.track()
 	if not M.root then
@@ -348,12 +357,22 @@ function M.track()
 	if not project_store.set(M.root, entry()) then
 		return false
 	end
-	cpp_project.refresh_known_projects()
+	if M.path then
+		M.resolve(M.path)
+	else
+		cpp_project.refresh_known_projects()
+	end
 	return true
 end
 
---- Stop tracking the current root. The in-memory config is left alone, so the
---- menu still shows what's selected; it just no longer persists.
+--- Stop tracking the current root. Deliberately does *not* re-resolve the way
+--- track() does: dropping out of known_projects can leave a marker-less
+--- project resolving to nothing at all, and a root that vanishes takes the
+--- displayed config and the ability to press <C-s> again with it. So the
+--- in-memory root and config are left standing - the project is simply no
+--- longer saved. Whoever wires this to a key should decide whether untracking
+--- the *current* project should also pin its root as a session override, which
+--- is what would keep it resolving honestly rather than by a stale mirror.
 ---@return boolean written
 function M.untrack()
 	if not M.root or not project_store.remove(M.root) then

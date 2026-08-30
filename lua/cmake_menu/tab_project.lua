@@ -338,7 +338,9 @@ function M.open()
 		{ lhs="<Up>",   rhs=function() move(-1) end },
 		{ lhs="<CR>",   rhs=function() acts:dispatch(state.sel, "<CR>"); m:render() end },
 		{ lhs="x",      rhs=function() acts:dispatch(state.sel, "x"); m:render() end },
-		{ lhs="<C-s>",  rhs=track_project },
+		-- re-rendered like every other action: tracking re-resolves the root, so
+		-- the "found via" row above is stale the moment it returns
+		{ lhs="<C-s>",  rhs=function() track_project(); m:render() end },
 	}
 	m:map(tabs.mappings())
 	return m
