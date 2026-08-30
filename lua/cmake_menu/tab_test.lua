@@ -194,38 +194,65 @@ local function body_item_start_lsp(r)
 	}
 end
 
---- Visual-only scratch row: every key combo cmake_menu.keyicon knows how to
---- render, bound to nops. Select it and read the footer to check the icons
+--- Visual-only scratch rows: every key combo cmake_menu.keyicon knows how to
+--- render, bound to nops. Select one and read the footer to check the icons
 --- (not wired into open()'s m:map, so most of these don't actually fire -
---- that's fine, this item exists to be looked at, not pressed). Remove once
---- keyicon's rendering has been eyeballed against the real terminal font.
+--- that's fine, these items exist to be looked at, not pressed). Split across
+--- several rows (max 5 actions each) just so the footer hint doesn't get cut
+--- off/wrap - not a general rule for other items. Remove once keyicon's
+--- rendering has been eyeballed against the real terminal font.
 ---@param r CMenu.Render
 local function body_item_keyicon_scratch(r)
-	r:item_begin()
-	r:line2{{ text="(keyicon scratch)", hl=HL.Dim }}
-	r:item_end()
 	local nop = function() end
+
+	r:item_begin()
+	r:line2{{ text="(keyicon scratch 1)", hl=HL.Dim }}
+	r:item_end()
 	acts:set{
 		{ key="<CR>",        desc="plain",      action=nop },
 		{ key="<S-CR>",      desc="shift",      action=nop },
 		{ key="<C-CR>",      desc="ctrl",       action=nop },
 		{ key="<C-S-CR>",    desc="ctrl+shift", action=nop },
 		{ key="x",           desc="letter",     action=nop },
+	}
+
+	r:item_begin()
+	r:line2{{ text="(keyicon scratch 2)", hl=HL.Dim }}
+	r:item_end()
+	acts:set{
 		{ key="<Tab>",       desc="tab",        action=nop },
 		{ key="<S-Tab>",     desc="s-tab",      action=nop },
 		{ key="<Esc>",       desc="esc",        action=nop },
 		{ key="<BS>",        desc="bs",         action=nop },
 		{ key="<Del>",       desc="del",        action=nop },
+	}
+
+	r:item_begin()
+	r:line2{{ text="(keyicon scratch 3)", hl=HL.Dim }}
+	r:item_end()
+	acts:set{
 		{ key="<Up>",        desc="up",         action=nop },
 		{ key="<Down>",      desc="down",       action=nop },
 		{ key="<Left>",      desc="left",       action=nop },
 		{ key="<Right>",     desc="right",      action=nop },
 		{ key="<Home>",      desc="home",       action=nop },
+	}
+
+	r:item_begin()
+	r:line2{{ text="(keyicon scratch 4)", hl=HL.Dim }}
+	r:item_end()
+	acts:set{
 		{ key="<End>",       desc="end",        action=nop },
 		{ key="<PageUp>",    desc="pgup",       action=nop },
 		{ key="<PageDown>",  desc="pgdn",       action=nop },
 		{ key="<Space>",     desc="space",      action=nop },
 		{ key="<M-x>",       desc="alt",        action=nop },
+	}
+
+	r:item_begin()
+	r:line2{{ text="(keyicon scratch 5)", hl=HL.Dim }}
+	r:item_end()
+	acts:set{
 		{ key="<D-a>",       desc="cmd",        action=nop },
 	}
 end
