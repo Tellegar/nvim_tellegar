@@ -8,7 +8,7 @@
 -- root->client dedup, no bookkeeping needed here.
 --
 -- Not autostarted: starting is a deliberate action from cmake_menu (the
--- "start lsp" row in tab_test, after the user has confirmed the project's
+-- "start lsp" row in tab_project, after the user has confirmed the project's
 -- build dir), not a FileType autocmd - a not-yet-configured build dir makes
 -- clangd fail to find its compile database, so starting eagerly just floods
 -- the buffer with bogus errors. cmake_menu.setup() owns the FileType
@@ -51,6 +51,23 @@ function M.start(bufnr, root)
 		filetypes = M.FILETYPES,
 		capabilities = { offsetEncoding = { "utf-8" } },
 	}, { bufnr = bufnr })
+end
+
+--- Whether a clangd client is already running for `root` - i.e. whether
+--- M.start() would reuse one rather than spawn one. Asks nvim's client
+--- registry directly, since that (not any bookkeeping of ours) is what does
+--- the root->client dedup; cmake_menu reads this for its "start lsp" vs
+--- "restart lsp" label.
+---@param root string?
+---@return boolean
+function M.running(root)
+	if not root then return false end
+	for _, c in ipairs(vim.lsp.get_clients({ name = "clangd" })) do
+		if c.config.root_dir == root then
+			return true
+		end
+	end
+	return false
 end
 
 return M
