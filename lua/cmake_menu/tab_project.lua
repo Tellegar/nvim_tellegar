@@ -62,21 +62,6 @@ end
 -- body item: config (picks the cmake preset or manual config to use)
 ----------------------------------------------------------------------------------------------------
 
---- `path` relative to `root` when it's a descendant of it (so display never
---- grows a leading "../..") - otherwise `path` unchanged, absolute.
----@param root string?
----@param path string
----@return string
-local function relative_to_root(root, path)
-	if not root then return path end
-	local prefix = vim.fs.normalize(root):gsub("/+$", "") .. "/"
-	local norm = vim.fs.normalize(path)
-	if norm:sub(1, #prefix) == prefix then
-		return norm:sub(#prefix + 1)
-	end
-	return path
-end
-
 --- The config-picker dropdown's choices: every cmake preset, then every
 --- manual config, then a trailing action to create a new manual one. `kind`
 --- drives both on_pick (below) and the right-aligned source tag
@@ -89,7 +74,7 @@ local function config_choices(root)
 		list[#list + 1] = { kind = "preset", label = p.display, name = p.name }
 	end
 	for _, c in ipairs(project.manual_configs()) do
-		list[#list + 1] = { kind = "manual", label = relative_to_root(root, c.build_dir), config = c }
+		list[#list + 1] = { kind = "manual", label = utils.relative_to(root, c.build_dir), config = c }
 	end
 	list[#list + 1] = { kind = "add", label = "+ add manual config" }
 	return list
@@ -130,7 +115,7 @@ local function body_item_config(r)
 		label = assert(config.cmake_preset_name)
 		hl = HL.Value
 	else
-		label = relative_to_root(project.root, config.build_dir)
+		label = utils.relative_to(project.root, config.build_dir)
 		hl = HL.Value
 	end
 

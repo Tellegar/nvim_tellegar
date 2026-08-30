@@ -279,18 +279,34 @@ local hl_from_source = {
 	preset=HL.Dim,
 }
 
+--- The build dir as shown and as offered for editing: written relative to the
+--- source root when it lives under it. A preset's binaryDir expands to an
+--- absolute path (`${sourceDir}/build/gcc-debug`), which is both too long for
+--- the row and repeats the root the Project tab is already showing.
+---
+--- The input default is the same shortened form deliberately - what you see is
+--- what you edit, and a relative value is what a hand-typed build dir looks
+--- like anyway (see tab_project's "+ add manual config"). Note the command
+--- preview keeps whatever is actually stored: `cmake -B` resolves a relative
+--- path against the cwd, not against the source root, so shortening it there
+--- would change what the command means.
+---@return string
+local function display_build_dir()
+	return utils.relative_to(project.root, eff_config.build_dir)
+end
+
 local function body_item_build_dir()
 	r:item_begin()
 	r:line2{
 		"build dir",
 		{ fill=true },
-		{ text=utils.shell_escape(eff_config.build_dir), hl=hl_from_source[eff_source.build_dir]}
+		{ text=utils.shell_escape(display_build_dir()), hl=hl_from_source[eff_source.build_dir]}
 	}
 	r:item_end()
 	acts:set{
 		{ key="<CR>",
 			action=function()
-				local default = eff_config.build_dir
+				local default = display_build_dir()
 				vim.ui.input(
 					{ prompt = "build dir name: ", default = default },
 					function(v)

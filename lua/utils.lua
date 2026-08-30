@@ -30,6 +30,26 @@ function M.shell_escape(str)
 	return str
 end
 
+--- `path` written relative to `base` when it's a descendant of it, otherwise
+--- `path` unchanged. For display only: it shortens a path that is already
+--- rooted under a directory the UI is showing anyway, and deliberately never
+--- produces a leading "../.." - a path outside `base` stays absolute rather
+--- than being expressed as a climb out of it.
+---@param base string?
+---@param path string
+---@return string
+function M.relative_to(base, path)
+	if not base then
+		return path
+	end
+	local prefix = vim.fs.normalize(base):gsub("/+$", "") .. "/"
+	local norm = vim.fs.normalize(path)
+	if norm:sub(1, #prefix) == prefix then
+		return norm:sub(#prefix + 1)
+	end
+	return path
+end
+
 --- Renders `value` as a Lua-ish string. Tables become `{ k=v, ... }`, nested
 --- tables recurse. Single line by default; pass `multiline=true` for an
 --- indented layout.
