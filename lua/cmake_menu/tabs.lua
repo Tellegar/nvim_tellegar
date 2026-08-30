@@ -23,6 +23,7 @@ M.tabs = {
 	{ name = "Project example",   modname = "cmake_menu.tab_old_project" },
 	{ name = "Project",   modname = "cmake_menu.tab_project" },
 	{ name = "Configure", modname = "cmake_menu.tab_configure" },
+	{ name = "Roots",     modname = "cmake_menu.tab_roots" },
 }
 
 ---@type integer index of current tab
