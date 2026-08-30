@@ -176,22 +176,44 @@ local function body_item_config(r)
 	}
 end
 
---- The "start lsp" row: a deliberate, explicit action rather than an
---- autostart, so it only fires once the config row above reads the way the
---- user wants - see cpp_project.clangd's header for why. The label asks
---- clangd whether a client is already running for this root (not
---- known_projects, which now means "tracked in project_store" - a different
---- fact entirely).
+--- The lsp row: a deliberate, explicit start/stop rather than an autostart, so
+--- it only fires once the config row above reads the way the user wants - see
+--- cpp_project.clangd's header for why. No separate "restart": toggling is
+--- start-if-not-running, stop-if-running, and starting again after a stop
+--- already gets you a fresh client (vim.lsp.start reuses one only by
+--- (name, root_dir), and stop() tears the old one down first) - a third
+--- *lifecycle* state would be the same action with an extra name.
+---
+--- There IS a third *display* state, though: vim.lsp.start() doesn't block, so
+--- clangd.running() stays false for the whole initialize handshake right after
+--- starting - reading that as "stopped" would make the row silently flip back
+--- to "start lsp" for however long clangd takes to come up, inviting a second,
+--- redundant start. clangd.status() surfaces the in-between "starting" state
+--- instead, still stoppable (cancels a client stuck mid-handshake).
+---
+--- Only rendered once project.build_dir() can produce something - not just
+--- project.root - since that's the actual information clangd.start() needs
+--- (project.has_config() alone isn't quite enough: build_dir() also guards on
+--- project.root itself, which could in principle be nil while a stale config
+--- lingers).
 ---@param r CMenu.Render
 local function body_item_start_lsp(r)
+	local status = clangd.status(project.root)
+	local label = ({ stopped = "start lsp", starting = "lsp starting...", running = "stop lsp" })[status]
 	r:item_begin()
-	local label = clangd.running(project.root) and "restart lsp" or "start lsp"
-	r:line2{{ text="+" .. label, hl=HL.Action }}
+	r:line2{{ text=status == "stopped" and ("+" .. label) or label, hl=HL.Action }}
 	r:item_end()
 	acts:set{
-		{ key="<CR>", desc=label,
+		{ key="<CR>", desc=status == "stopped" and "start" or "stop",
 			action=function()
-				clangd.start(session.buf, project.root)
+				if status == "stopped" then
+					-- the row above is only rendered once build_dir() is non-nil
+					-- (see this function's doc comment); by the time this can
+					-- fire, that's already been true for a full render
+					clangd.start(session.buf, project.root, assert(project.build_dir()))
+				else
+					clangd.stop(project.root)
+				end
 			end },
 	}
 end
@@ -349,7 +371,9 @@ local function render(m)
 	if project.root then
 		r:line("")
 		body_item_config(r)
-		body_item_start_lsp(r)
+		if project.build_dir() then
+			body_item_start_lsp(r)
+		end
 	end
 
 	r:line("")

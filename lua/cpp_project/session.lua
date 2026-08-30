@@ -248,6 +248,34 @@ function M.preset()
 	return hit or nil
 end
 
+--- The selected config's effective build dir, as an absolute path - the same
+--- value-then-preset-then-"build" precedence cmake_menu.tab_configure's
+--- eval_config uses for display, resolved to an absolute path since that's
+--- what a compile-commands directory has to be. nil before a config is
+--- picked: clangd.start needs this to point --compile-commands-dir at the
+--- right place, and there's nothing to point it at yet.
+---
+--- A preset's build_dir (from cmake_presets.resolve) is already absolute -
+--- it's macro-expanded against `root` - so only an explicit override or the
+--- hardcoded "build" fallback (relative, cmake's own default) ever needs
+--- joining with root here.
+---@return string?
+function M.build_dir()
+	if not M.has_config() or not M.root then
+		return nil
+	end
+	local rel = M.config.build_dir
+	if not rel then
+		local preset = M.preset()
+		rel = preset and preset.build_dir
+	end
+	rel = rel or "build"
+	if vim.startswith(rel, "/") then
+		return rel
+	end
+	return vim.fs.normalize(M.root .. "/" .. rel)
+end
+
 ----------------------------------------------------------------------------------------------------
 -- changing the selection
 ----------------------------------------------------------------------------------------------------
