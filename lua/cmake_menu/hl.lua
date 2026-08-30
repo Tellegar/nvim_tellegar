@@ -13,6 +13,9 @@ local HL = {
 	Selected       = "Selected",
 	SelectedMarker = "SelectedMarker",
 	Action         = "Action",
+	-- deliberately not plain "Error": that's a builtin group, and set_hl's
+	-- default=true would leave ours a no-op alias of it
+	Error          = "MenuError",
 	HiddenCursor   = "HiddenCursor",
 	FooterBg       = "FooterBg", -- winhighlight target, not a text hl - see float.lua's footer pane
 }
@@ -53,6 +56,7 @@ local function apply()
 	set_hl(HL.Selected,       { link = "CursorLine" })
 	set_hl(HL.SelectedMarker, { link = "Special" })
 	set_hl(HL.Action,         { link = "Function" })
+	set_hl(HL.Error,          { link = "ErrorMsg" })
 	set_hl(HL.HiddenCursor,   { blend = 100, nocombine = true })
 
 	local footer_bg = shift_bg("NormalFloat", -4)

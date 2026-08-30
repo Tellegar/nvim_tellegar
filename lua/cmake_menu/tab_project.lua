@@ -1,17 +1,20 @@
 --- cmake_menu.tab_project — the main tab of cmake_menu: pick/override the
---- source root, and pick (or override) the cmake preset / build dir to use.
---- cmake_menu.tab_configure gates itself on M.has_selected_config() below -
---- a project's build_dir/preset gets picked here before its cmake options
---- get edited there.
+--- source root, and pick which config (a cmake preset, or a manual one) to
+--- use. cmake_menu.tab_configure gates itself on cpp_project.session's
+--- has_config() - a config gets picked here before its fields get edited there.
+---
+--- This tab owns no project state of its own: the root and the selected config
+--- both live in cpp_project.session, which is also what persists them. Every
+--- pick below is a mutation of that session, so the Configure tab and clangd
+--- see the same thing without anything being passed between tabs.
 
 local HL = require("cmake_menu.hl")
 local actions = require("cmake_menu.actions")
 local clangd = require("cpp_project.clangd")
 local cmake_presets = require("cpp_project.cmake_presets")
-local cpp_project = require("cpp_project")
 local dropdown = require("cmake_menu.dropdown")
 local float = require("cmake_menu.float")
-local project_store = require("cpp_project.project_store")
+local project = require("cpp_project.session")
 local render_mod = require("cmake_menu.render")
 local session = require("cmake_menu.session")
 local tabs = require("cmake_menu.tabs")
@@ -24,147 +27,40 @@ local M = {}
 --   sel       - current selection index
 --   dd_root   - expansion bool for the source-root dropdown (the anchor row and
 --               its toggle action are rendered below, in the tab itself).
---   dd_preset - expansion bool for the cmake-preset dropdown (see body_item_preset).
+--   dd_config - expansion bool for the config-picker dropdown (see body_item_config).
 local state = {
 	sel = 1,
 	dd_root = false,
-	dd_preset = false,
+	dd_config = false,
 }
 -- the current frame's action map; persists across renders
 local acts = actions.new()
 
-----------------------------------------------------------------------------------------------------
--- build dir config: cmake_preset_name -> build_dir, same value/default/preset
--- source tracking as tab_configure.eval_config, but scoped to just these two
--- fields since that's all clangd's --compile-commands-dir needs. Manual
--- override (config.build_dir set directly, bypassing any preset) covers a
--- not-yet-created build dir - vim.ui.input just takes a typed path.
-----------------------------------------------------------------------------------------------------
-
----@type CMake.Config
-local config = {
-	--cmake_preset_name = nil,
-	--build_dir = nil,
-}
-
-local Source = {
-	value = "value",
-	default = "default",
-	preset = "preset",
-}
-
---- Whether a config has actually been picked for the current root, not just
---- available to pick: a cmake preset selected, or (when the project has no
---- presets to select from) a manual build_dir set. Gates
---- cmake_menu.tab_configure - editing cmake options makes no sense before
---- this tab has settled on which preset/build_dir they apply to.
----@return boolean
-function M.has_selected_config()
-	return config.cmake_preset_name ~= nil or config.build_dir ~= nil
-end
-
----@param root string
----@return CMake.Config eff
----@return table<string, string> source Source.* per field
-local function eval_config(root)
-	local eff, source = {}, {}
-
-	local preset_resolved = config.cmake_preset_name
-		and cmake_presets.resolve(root, config.cmake_preset_name)
-
-	if config.cmake_preset_name and preset_resolved then
-		eff.cmake_preset_name = config.cmake_preset_name
-		source.cmake_preset_name = Source.value
-	else
-		eff.cmake_preset_name = nil
-		source.cmake_preset_name = Source.default
+--- <C-s>'s handler: "start tracking this project" - write the current root and
+--- config into project_store, which is also what puts the root into
+--- cpp_project.known_projects (a root is tracked exactly when it's in the
+--- store, so <C-s>'s state and known_projects membership are the same fact).
+---
+--- Once tracked, picking a config below saves straight through; until then the
+--- picks are session-only. Either way nothing saves without a user action -
+--- that's what stops this instance from silently resurrecting a project
+--- another instance removed.
+local function track_project()
+	if not project.root then
+		return
 	end
-
-	if config.build_dir then
-		eff.build_dir = config.build_dir
-		source.build_dir = Source.value
-	elseif preset_resolved and preset_resolved.build_dir then
-		eff.build_dir = preset_resolved.build_dir
-		source.build_dir = Source.preset
-	else
-		eff.build_dir = "build/debug"
-		source.build_dir = Source.default
-	end
-
-	return eff, source
-end
-
-local hl_from_source = {
-	value = HL.Value,
-	default = HL.Dim,
-	preset = HL.Dim,
-}
-
---- <C-s>'s handler: one-time "start tracking this project" (see
---- current.md). Creates session.root's project_store file seeded from the
---- current in-session `config`, if it doesn't exist yet; no-op (past the
---- notify) once tracked. Not a general save - once tracked, every mutating
---- action below is meant to write through immediately instead (not yet
---- wired).
-local function save_config()
-	if not session.root then return end
-	if project_store.exists(session.root) then
+	if project.tracked() then
 		vim.notify("cmake_menu: already tracking this project", vim.log.levels.INFO)
 		return
 	end
-
-	local configs, selected_config = {}, nil
-	if config.build_dir then
-		local entry = { build_dir = config.build_dir }
-		if config.cmake_preset_name then
-			entry.cmake_preset_name = config.cmake_preset_name
-		end
-		configs = { entry }
-		selected_config = config.build_dir
-	elseif config.cmake_preset_name then
-		selected_config = config.cmake_preset_name
+	if project.track() then
+		vim.notify("cmake_menu: now tracking " .. project.root, vim.log.levels.INFO)
 	end
-
-	project_store.save(session.root, { selected_config = selected_config, configs = configs })
-	vim.notify("cmake_menu: now tracking " .. session.root, vim.log.levels.INFO)
 end
 
 ----------------------------------------------------------------------------------------------------
--- body items: cmake preset + build dir
+-- body item: config (picks the cmake preset or manual config to use)
 ----------------------------------------------------------------------------------------------------
-
----@param r CMenu.Render
----@param eff_config CMake.Config
----@param eff_source table<string, string>
-local function body_item_preset(r, eff_config, eff_source)
-	r:item_begin()
-	r:line2{
-		"cmake preset",
-		{ fill=true },
-		{ text=eff_config.cmake_preset_name or "(unset)", hl=hl_from_source[eff_source.cmake_preset_name] },
-	}
-	r:item_end()
-	acts:set{
-		{ key="<CR>", desc="pick",  action=function() state.dd_preset = not state.dd_preset end },
-		{ key="x",    desc="unset", action=function() config.cmake_preset_name = nil end },
-	}
-	dropdown.render{
-		state = state,
-		open = "dd_preset",
-		choices = function()
-			local list = { { name = nil, display = "(unset)" } }
-			for _, p in ipairs(cmake_presets.list(session.root)) do
-				list[#list + 1] = p
-			end
-			return list
-		end,
-		text = function(p) return p.display end,
-		on_pick = function(p)
-			config.cmake_preset_name = p.name
-			state.dd_preset = false
-		end,
-	}
-end
 
 --- `path` relative to `root` when it's a descendant of it (so display never
 --- grows a leading "../..") - otherwise `path` unchanged, absolute.
@@ -181,54 +77,96 @@ local function relative_to_root(root, path)
 	return path
 end
 
+--- The config-picker dropdown's choices: every cmake preset, then every
+--- manual config, then a trailing action to create a new manual one. `kind`
+--- drives both on_pick (below) and the right-aligned source tag
+--- (config_tag_of).
+---@param root string
+---@return table[]
+local function config_choices(root)
+	local list = { { kind = "unset", label = "(unset)" } }
+	for _, p in ipairs(cmake_presets.list(root)) do
+		list[#list + 1] = { kind = "preset", label = p.display, name = p.name }
+	end
+	for _, c in ipairs(project.manual_configs()) do
+		list[#list + 1] = { kind = "manual", label = relative_to_root(root, c.build_dir), config = c }
+	end
+	list[#list + 1] = { kind = "add", label = "+ add manual config" }
+	return list
+end
+
+local config_tag_of = {
+	preset = "cmake preset",
+	manual = "manual config",
+}
+
+--- Picking writes straight through cpp_project.session, which persists it when
+--- the project is tracked - so a pick here is what the Configure tab edits and
+--- what a later nvim reads back.
+---@param c table one of config_choices()'s entries
+local function config_on_pick(c)
+	if c.kind == "unset" then
+		project.unselect()
+	elseif c.kind == "preset" then
+		project.select_preset(c.name)
+	elseif c.kind == "manual" then
+		project.select(c.config)
+	elseif c.kind == "add" then
+		vim.ui.input({ prompt = "build dir: " }, function(v)
+			if not v or v == "" then return end
+			project.select_build_dir(v)
+		end)
+	end
+	state.dd_config = false
+end
+
 ---@param r CMenu.Render
----@param eff_config CMake.Config
----@param eff_source table<string, string>
-local function body_item_build_dir(r, eff_config, eff_source)
+local function body_item_config(r)
+	local config = project.config
+	local label, hl
+	if not project.has_config() then
+		label, hl = "(unset)", HL.Dim
+	elseif config.cmake_preset_name then
+		label = assert(config.cmake_preset_name)
+		hl = HL.Value
+	else
+		label = relative_to_root(project.root, config.build_dir)
+		hl = HL.Value
+	end
+
 	r:item_begin()
-	r:line2{
-		"build dir",
-		{ fill=true },
-		{
-			text=relative_to_root(session.root, eff_config.build_dir),
-			hl=hl_from_source[eff_source.build_dir],
-		},
-	}
+	r:line2{ "config", { fill=true }, { text=label, hl=hl } }
 	r:item_end()
 	acts:set{
-		{ key="<CR>", desc="edit",
-			action=function()
-				vim.ui.input(
-					{ prompt = "build dir: ", default = eff_config.build_dir },
-					function(v)
-						if not v then return end
-						config.build_dir = (v ~= "") and v or nil
-					end
-				)
-			end },
-		{ key="x", desc="reset",
-			action=function()
-				config.build_dir = nil
-			end },
+		{ key="<CR>", desc="pick",  action=function() state.dd_config = not state.dd_config end },
+		{ key="x",    desc="unset", action=function() project.unselect() end },
+	}
+	dropdown.render{
+		state = state,
+		open = "dd_config",
+		choices = function() return config_choices(project.root) end,
+		text = function(c) return c.label end,
+		tag = function(c) return config_tag_of[c.kind] end,
+		on_pick = config_on_pick,
 	}
 end
 
 --- The "start lsp" row: a deliberate, explicit action rather than an
---- autostart, so it only fires once the preset/build-dir rows above read the
---- way the user wants - see cpp_project.clangd's header for why. Also marks
---- the root known, so cmake_menu.setup()'s autocmd stops offering the menu
---- for it.
+--- autostart, so it only fires once the config row above reads the way the
+--- user wants - see cpp_project.clangd's header for why. The label asks
+--- clangd whether a client is already running for this root (not
+--- known_projects, which now means "tracked in project_store" - a different
+--- fact entirely).
 ---@param r CMenu.Render
 local function body_item_start_lsp(r)
 	r:item_begin()
-	local label = cpp_project.known_projects[session.root] and "restart lsp" or "start lsp"
+	local label = clangd.running(project.root) and "restart lsp" or "start lsp"
 	r:line2{{ text="+" .. label, hl=HL.Action }}
 	r:item_end()
 	acts:set{
 		{ key="<CR>", desc=label,
 			action=function()
-				clangd.start(session.buf, session.root)
-				cpp_project.known_projects[session.root] = true
+				clangd.start(session.buf, project.root)
 			end },
 	}
 end
@@ -331,15 +269,15 @@ local function render(m)
 		{ text="source root" },
 		{ fill=true },
 		{
-			text=session.root and vim.fn.fnamemodify(session.root, ":~") or "(unset)",
-			hl=session.root and HL.Value or HL.Dim
+			text=project.root and vim.fn.fnamemodify(project.root, ":~") or "(unset)",
+			hl=project.root and HL.Value or HL.Dim
 		},
 	}
 	r:line2{
 		"   ",
 		{ text="found via", hl=HL.Dim },
 		{ fill=true },
-		{ text=utils.inspect(session.found_via or {}),
+		{ text=utils.inspect(project.found_via or {}),
 			hl=HL.Dim
 		},
 	}
@@ -361,7 +299,7 @@ local function render(m)
 		state.dd_root = not state.dd_root
 	end }
 	acts:set{ key = "x", desc = "clear override", action = function()
-		session.set_root(nil)
+		project.set_root(nil)
 	end }
 
 	-- the expansion itself: candidate roots (state-dependent) + pick callback.
@@ -373,17 +311,12 @@ local function render(m)
 		open = "dd_root",
 		choices = root_candidates,
 		text = function(dir) return vim.fn.fnamemodify(dir, ":~") end,
-		on_pick = function(dir) session.set_root(dir); state.dd_root = false end,
+		on_pick = function(dir) project.set_root(dir); state.dd_root = false end,
 	}
 
-	if session.root then
-		local eff_config, eff_source = eval_config(session.root)
-
+	if project.root then
 		r:line("")
-		if cmake_presets.available(session.root) then
-			body_item_preset(r, eff_config, eff_source)
-		end
-		body_item_build_dir(r, eff_config, eff_source)
+		body_item_config(r)
 		body_item_start_lsp(r)
 	end
 
@@ -420,7 +353,7 @@ function M.open()
 		{ lhs="<Up>",   rhs=function() move(-1) end },
 		{ lhs="<CR>",   rhs=function() acts:dispatch(state.sel, "<CR>"); m:render() end },
 		{ lhs="x",      rhs=function() acts:dispatch(state.sel, "x"); m:render() end },
-		{ lhs="<C-s>",  rhs=save_config },
+		{ lhs="<C-s>",  rhs=track_project },
 	}
 	m:map(tabs.mappings())
 	return m

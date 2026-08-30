@@ -1,9 +1,21 @@
---- cmake_menu.tab_configure — STATIC example "Configure" tab, rendered by hand.
+--- cmake_menu.tab_configure — the "Configure" tab: the editor for whichever
+--- config the Project tab has selected.
 ---
 --- cmake_menu's end goal is to be the interface for driving cmake on a project;
 --- this tab is where that project's build-dir configuration is set up and
 --- previewed before a build_dir is actually created — build type, generator,
 --- and -D defines.
+---
+--- It holds no config of its own. Every field below reads and writes
+--- cpp_project.session's selected config in place, and every edit ends in
+--- session.commit(), which both keeps that config's membership in the saved
+--- list correct (a preset that has just gained its first override needs a
+--- stored entry; one that lost its last override stops needing one) and
+--- persists it when the project is tracked.
+---
+--- Fields left unset here fall through to the selected cmake preset, and then
+--- to a hardcoded default — see eval_config below, which reports where each
+--- effective value came from so the display can dim inherited ones.
 ---
 --- header: the tab strip (see cmake_menu.tabs).  footer: the key hint.
 --- body: right-aligned editable values, a -D defines list, an "add" action, and
@@ -12,9 +24,9 @@
 local HL = require("cmake_menu.hl")
 local actions = require("cmake_menu.actions")
 local cmake = require("cpp_project.cmake")
-local cmake_presets = require("cpp_project.cmake_presets")
 local dropdown = require("cmake_menu.dropdown")
 local float = require("cmake_menu.float")
+local project = require("cpp_project.session")
 local render_mod = require("cmake_menu.render")
 local tabs = require("cmake_menu.tabs")
 local utils = require("utils")
@@ -42,33 +54,14 @@ local r
 -- state
 ----------------------------------------------------------------------------------------------------
 
----@type CMake.Config
-local config = {
-	--cmake_preset_name = "gcc-debug",
-	--build_dir = "build/Debug",
-	--generator = "Ninja",
-	--defines = {
-	--	{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
-	--	{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" },
-	--	{ name = "CMAKE_C_COMPILER",              value = "gcc" },
-	--	{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
-	--},
-}
-
--- temp --
---local root = "~/t"
---local config_preset = cmake_presets.resolve(root, "gcc-debug")
-local config_preset = {
-	build_dir = "~/t/build/gcc-debug",
-	cmake_preset_name = "gcc-debug",
-	generator = "Ninja",
-	defines = {
-		{ name = "CMAKE_BUILD_TYPE",              value = "Debug" },
-		{ name = "CMAKE_CXX_COMPILER",            value = "g++" },
-		{ name = "CMAKE_C_COMPILER",              value = "gcc" },
-		{ name = "CMAKE_EXPORT_COMPILE_COMMANDS", value = "ON" }
-	},
-}
+--- Mutate the selected config and write the result through. Every field
+--- action below goes via this rather than touching cpp_project.session.config
+--- directly, so none of them can forget the commit that persists the edit.
+---@param fn fun(config: CMake.Config)
+local function edit(fn)
+	fn(project.config)
+	project.commit()
+end
 
 ----------------------------------------------------------------------------------------------------
 -- define helpers
@@ -134,10 +127,17 @@ local Source = {
 ---@field generator string Source.*
 ---@field defines string[] Source.* per entry, parallel to CMake.Config.defines
 
+--- Fold the selected config over its preset: for each field, the explicitly
+--- set value wins, else the preset's, else a hardcoded default. The parallel
+--- `source` says which of the three each effective value came from, which is
+--- what lets the display dim inherited values and config_filter_preset drop
+--- the ones `--preset` will supply on its own.
 ---@return CMake.Config eff
 ---@return CMake.ConfigSource source
 local function eval_config()
 	local eff, source = {}, {}
+	local config = project.config
+	local config_preset = project.preset()
 
 	if config.cmake_preset_name then
 		eff.cmake_preset_name = config.cmake_preset_name
@@ -234,13 +234,6 @@ local function render_command_preview(parts)
 	--     -DCMAKE_C_COMPILER=gcc       \
 	--     -DCMAKE_CXX_COMPILER=g++
 
-	-- TODO: config_preset is resolved above against a hardcoded placeholder
-	-- root ("~/t"), not the actual project. Before wiring this up for real:
-	-- take the project root from the caller instead of hardcoding it, and
-	-- validate config.cmake_preset_name against cmake_presets.list(root) here
-	-- (surfacing an invalid preset name as a UI error) rather than assuming
-	-- resolve() succeeded.
-
 	local lines = {}
 	local max_len = 0
 	for i, part in ipairs(parts) do
@@ -302,13 +295,13 @@ local function body_item_build_dir()
 					{ prompt = "build dir name: ", default = default },
 					function(v)
 						if not v then return end
-						config.build_dir = (v and v ~= "") and v or nil
+						edit(function(c) c.build_dir = v ~= "" and v or nil end)
 					end
 				)
 			end },
 		{ key="x",
 			action=function()
-				config.build_dir = nil
+				edit(function(c) c.build_dir = nil end)
 			end },
 	}
 end
@@ -326,7 +319,7 @@ local function body_item_build_type()
 	-- <CR> toggles the dropdown; x clears the value
 	acts:set{
 		{ key="<CR>", action=function() state.dd_build_type = not state.dd_build_type end },
-		{ key="x",    action=function() define_clear(config, "CMAKE_BUILD_TYPE") end },
+		{ key="x",    action=function() edit(function(c) define_clear(c, "CMAKE_BUILD_TYPE") end) end },
 	}
 	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
 	dropdown.render{
@@ -335,7 +328,7 @@ local function body_item_build_type()
 		choices = function() return choices end,
 		on_pick = function(choice)
 			if choice == choices[1] then choice = nil end
-			define_set(config, "CMAKE_BUILD_TYPE", choice)
+			edit(function(c) define_set(c, "CMAKE_BUILD_TYPE", choice) end)
 			state.dd_build_type = false
 		end,
 	}
@@ -366,15 +359,15 @@ local function body_item_generator()
 	-- <CR> toggles the dropdown; x clears the value
 	acts:set{
 		{ key="<CR>", action=function() state.dd_generator = not state.dd_generator end },
-		{ key="x",    action=function() config.generator = nil end },
+		{ key="x",    action=function() edit(function(c) c.generator = nil end) end },
 	}
 	dropdown.render{
 		state = state,
 		open = "dd_generator",
 		choices = generator_choices,
 		text = function(c) return c.label end,
-		on_pick = function(c)
-			config.generator = c.value
+		on_pick = function(choice)
+			edit(function(c) c.generator = choice.value end)
 			state.dd_generator = false
 		end,
 	}
@@ -405,7 +398,7 @@ local function body_item_defines()
 						{ prompt = d.name .. " = ", default = default },
 						function(v)
 							if not v then return end
-							define_set(config, d.name, v)
+							edit(function(c) define_set(c, d.name, v) end)
 						end)
 				end },
 			{ key="<S-CR>",
@@ -416,19 +409,20 @@ local function body_item_defines()
 						return
 					end
 
-					local _, idx = define_get(config, d.name)
+					local _, idx = define_get(project.config, d.name)
 
 					vim.ui.input(
 						{ prompt = "var name: ", default = default },
 						function(v)
 							if not v then return end
 							-- TODO strip v
-							--notify("v: " .. tostring(v) .. " i: " .. i)
-							if not idx then
-								define_set(config, v, d.value)
-							else
-								config.defines[idx].name = v
-							end
+							edit(function(c)
+								if not idx then
+									define_set(c, v, d.value)
+								else
+									c.defines[idx].name = v
+								end
+							end)
 						end
 					)
 
@@ -436,7 +430,7 @@ local function body_item_defines()
 			{
 				key="x",
 				action=function()
-					define_clear(config, d.name)
+					edit(function(c) define_clear(c, d.name) end)
 				end },
 		}
 	end
@@ -458,7 +452,7 @@ local function body_item_add_define()
 							vim.notify("cmake_menu: expected NAME=VALUE, got: " .. v, vim.log.levels.ERROR)
 							return
 						end
-						define_set(config, name, value)
+						edit(function(c) define_set(c, name, value) end)
 						state.sel = state.sel + 1
 					end)
 			end },
@@ -486,6 +480,19 @@ local function render(m)
 		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
 	end
 
+	-- Gated on the Project tab having settled on a config: float.lua/tabs.lua
+	-- have no notion of a disabled/hidden tab (tabs.step()/tabs.open() switch
+	-- unconditionally), so this renders a single explanatory line in place of
+	-- the body instead.
+	if not project.has_config() then
+		local body = render_mod.new(m.body)
+		body.margin = "  "
+		body:line("")
+		body:line2{{ text="pick a cmake preset or set a build dir in the Project tab first", hl=HL.Dim }}
+		body:render()
+		return
+	end
+
 	-- body
 	r = render_mod.new(m.body)
 	r.margin = "  "
@@ -493,10 +500,20 @@ local function render(m)
 
 	eff_config, eff_source = eval_config()
 
-	-- TODO detect preset and show it as an seletable item
-	--      this probably needs to wait till the invocation of this tab is clear
-
 	r:line("")
+	-- A preset name that this project's CMakePresets.json doesn't define
+	-- resolves to nothing, so every field silently loses its inherited value
+	-- and reads as a bare default. Say so rather than letting the config look
+	-- merely empty - the usual cause is a preset renamed or removed since it
+	-- was saved.
+	if project.config.cmake_preset_name and not project.preset() then
+		r:line2{{
+			text = "unknown cmake preset: " .. project.config.cmake_preset_name,
+			hl = HL.Error,
+		}}
+		r:line("")
+	end
+
 	body_item_build_dir()
 	body_item_build_type()
 	body_item_generator()

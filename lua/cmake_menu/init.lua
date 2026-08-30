@@ -8,12 +8,14 @@
 -- setup() owns the FileType c/cpp/objc/objcpp/cuda autocmd that offers the
 -- menu on a project nvim hasn't seen configured yet: it's the counterpart to
 -- cpp_project.clangd not autostarting - the menu is where the user confirms
--- the build dir (tab_test's "cmake preset"/"build dir" rows) and then starts
--- clangd themselves (its "start lsp" row), which is also what marks the root
--- known. A root already in cpp_project.known_projects doesn't reopen the menu
--- on every subsequent buffer in that project.
+-- the config to use (tab_project's "config" row) and then starts clangd
+-- themselves (its "start lsp" row), which is also what marks the root known.
+-- A root project_store already tracks doesn't reopen the menu on every
+-- subsequent buffer in that project (see the autocmd below): its saved config
+-- is loaded into cpp_project.session instead of re-offering the menu to pick
+-- one.
 
-local cpp_project = require("cpp_project")
+local project = require("cpp_project.session")
 local session = require("cmake_menu.session")
 
 local M = {}
@@ -24,6 +26,9 @@ local M = {}
 ---@param tab string? tab name, e.g. "Project"
 ---@param bufnr integer?
 function M.open(tab, bufnr)
+	-- capture() resolves through cpp_project.session, which re-reads the store
+	-- on the way: opening the menu reflects another instance's saves or
+	-- removals, not this session's first read of the file.
 	session.capture(bufnr)
 	require("cmake_menu.tabs").open(tab or "Project")
 end
@@ -57,13 +62,27 @@ function M.setup()
 			if vim.b[args.buf].cmake_menu_offered then
 				return
 			end
-			local root = cpp_project.find_root(args.buf)
-			if root and not cpp_project.known_projects[root] then
-				vim.b[args.buf].cmake_menu_offered = true
-				vim.schedule(function()
-					M.open("Project", args.buf)
-				end)
+
+			-- Resolving mirrors the store first (see cpp_project.session.resolve)
+			-- and loads the root's saved config if it has one, so by the time
+			-- this returns the project is set up either way - the only question
+			-- left is whether to bother the user about it.
+			local name = vim.api.nvim_buf_get_name(args.buf)
+			local root = project.resolve(name ~= "" and name or vim.fn.getcwd())
+			if not root then
+				return
 			end
+
+			-- A tracked root came with a config to use, not one to pick: stay
+			-- out of the way. Only an untracked one gets the menu offered.
+			if project.tracked() then
+				return
+			end
+
+			vim.b[args.buf].cmake_menu_offered = true
+			vim.schedule(function()
+				M.open("Project", args.buf)
+			end)
 		end,
 	})
 end
