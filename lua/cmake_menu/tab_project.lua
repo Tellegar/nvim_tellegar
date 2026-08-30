@@ -66,10 +66,16 @@ end
 --- manual config, then a trailing action to create a new manual one. `kind`
 --- drives both on_pick (below) and the right-aligned source tag
 --- (config_tag_of).
+---
+--- No "(unset)" row: the list is what you can *pick*, and unsetting isn't
+--- picking anything. It stays on the anchor row's own "x" (see
+--- body_item_config), which is where the rest of the menu already puts
+--- "clear this field" - and having it in both places made "x" mean two
+--- different things one row apart, since inside the list "x" deletes.
 ---@param root string
 ---@return table[]
 local function config_choices(root)
-	local list = { { kind = "unset", label = "(unset)" } }
+	local list = {}
 	for _, p in ipairs(cmake_presets.list(root)) do
 		list[#list + 1] = { kind = "preset", label = p.display, name = p.name }
 	end
@@ -87,12 +93,14 @@ local config_tag_of = {
 
 --- Picking writes straight through cpp_project.session, which persists it when
 --- the project is tracked - so a pick here is what the Configure tab edits and
---- what a later nvim reads back.
+--- what a later nvim reads back. Every kind is a terminal pick, "add" included:
+--- select_build_dir() below both creates the entry and selects it, so there's
+--- nothing left to do inside the list once it returns - close like any other
+--- pick.
 ---@param c table one of config_choices()'s entries
-local function config_on_pick(c)
-	if c.kind == "unset" then
-		project.unselect()
-	elseif c.kind == "preset" then
+---@param ctx CMenu.DropdownCtx
+local function config_on_pick(c, ctx)
+	if c.kind == "preset" then
 		project.select_preset(c.name)
 	elseif c.kind == "manual" then
 		project.select(c.config)
@@ -100,9 +108,38 @@ local function config_on_pick(c)
 		vim.ui.input({ prompt = "build dir: " }, function(v)
 			if not v or v == "" then return end
 			project.select_build_dir(v)
+			ctx.close()
 		end)
+		return
 	end
-	state.dd_config = false
+	ctx.close()
+end
+
+--- Only a manual config is a stored entry a choice row can point at directly -
+--- a preset row is just a name from CMakePresets.json (config_choices doesn't
+--- even carry which, if any, of `project.configs` overrides it), and "add"
+--- isn't an entry at all. So "x" here removes the *manual config*, not merely
+--- the current selection: unlike the anchor row's own "x" (unselect, which
+--- leaves the entry saved), this is the delete half of managing saved entries.
+---@param c table one of config_choices()'s entries
+---@return boolean
+local function config_deletable(c)
+	return c.kind == "manual"
+end
+
+--- Deleting keeps the list open and the selection put: the row vanishes and
+--- the one below shifts up into its slot, so the cursor is already on "the
+--- next entry". The exception is the last manual config, whose slot is taken
+--- over by the "+ add manual config" row that trails the list - landing on an
+--- action row after deleting an entry reads as a jump, so that one steps back
+--- onto the previous entry (or the anchor, once the last one is gone).
+---@param c table one of config_choices()'s entries
+---@param ctx CMenu.DropdownCtx
+local function config_on_delete(c, ctx)
+	project.remove(c.config)
+	if ctx.index == ctx.count - 1 then
+		ctx.focus(ctx.index - 1)
+	end
 end
 
 ---@param r CMenu.Render
@@ -133,6 +170,8 @@ local function body_item_config(r)
 		text = function(c) return c.label end,
 		tag = function(c) return config_tag_of[c.kind] end,
 		on_pick = config_on_pick,
+		deletable = config_deletable,
+		on_delete = config_on_delete,
 	}
 end
 
@@ -296,7 +335,8 @@ local function render(m)
 		open = "dd_root",
 		choices = root_candidates,
 		text = function(dir) return vim.fn.fnamemodify(dir, ":~") end,
-		on_pick = function(dir) project.set_root(dir); state.dd_root = false end,
+		-- every choice is a terminal pick: set the root, collapse, back to the anchor
+		on_pick = function(dir, ctx) project.set_root(dir); ctx.close() end,
 	}
 
 	if project.root then

@@ -17,7 +17,8 @@
 --- to a hardcoded default — see eval_config below, which reports where each
 --- effective value came from so the display can dim inherited ones.
 ---
---- header: the tab strip (see cmake_menu.tabs).  footer: the key hint.
+--- header: the tab strip (see cmake_menu.tabs).  footer: the selected item's
+--- own action hints (generic movement while no config is picked).
 --- body: right-aligned editable values, a -D defines list, an "add" action, and
 --- a multi-line command preview.
 
@@ -304,7 +305,7 @@ local function body_item_build_dir()
 	}
 	r:item_end()
 	acts:set{
-		{ key="<CR>",
+		{ key="<CR>", desc="edit",
 			action=function()
 				local default = display_build_dir()
 				vim.ui.input(
@@ -315,7 +316,7 @@ local function body_item_build_dir()
 					end
 				)
 			end },
-		{ key="x",
+		{ key="x", desc="clear",
 			action=function()
 				edit(function(c) c.build_dir = nil end)
 			end },
@@ -332,29 +333,30 @@ local function body_item_build_type()
 		{ text=value or "(unset)", hl=hl_from_source[source] }
 	}
 	r:item_end()
-	-- <CR> toggles the dropdown; x clears the value
+	-- <CR> toggles the dropdown; x unsets the value. No "(unset)" row in the
+	-- list itself - the list is what you can pick, and unsetting isn't picking
+	-- anything (see cmake_menu.tab_project's config_choices for the same call).
 	acts:set{
-		{ key="<CR>", action=function() state.dd_build_type = not state.dd_build_type end },
-		{ key="x",    action=function() edit(function(c) define_clear(c, "CMAKE_BUILD_TYPE") end) end },
+		{ key="<CR>", desc="pick",  action=function() state.dd_build_type = not state.dd_build_type end },
+		{ key="x",    desc="unset", action=function() edit(function(c) define_clear(c, "CMAKE_BUILD_TYPE") end) end },
 	}
-	local choices = { "(unset)", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" }
 	dropdown.render{
 		state = state,
 		open = "dd_build_type",
-		choices = function() return choices end,
-		on_pick = function(choice)
-			if choice == choices[1] then choice = nil end
+		choices = function() return cmake.BUILD_TYPES end,
+		on_pick = function(choice, ctx)
 			edit(function(c) define_set(c, "CMAKE_BUILD_TYPE", choice) end)
-			state.dd_build_type = false
+			ctx.close()
 		end,
 	}
 end
 
---- (unset) plus each known generator, labelled with its cmake-default marker and
---- -G flag; the picked entry's `value` is the bare generator name (nil = unset).
----@return { label: string, value: string? }[]
+--- Each known generator, labelled with its cmake-default marker and -G flag;
+--- the picked entry's `value` is the bare generator name. Unsetting is the
+--- row's own "x", not a list entry.
+---@return { label: string, value: string }[]
 local function generator_choices()
-	local list = { { label = "(unset)" } }
+	local list = {}
 	for _, gen in ipairs(cmake.GENERATORS) do
 		local label = gen.name
 		if gen.default then label = label .. " (cmake default)" end
@@ -372,19 +374,20 @@ local function body_item_generator()
 		{ text=eff_config.generator or "(unset)", hl=hl_from_source[eff_source.generator] }
 	}
 	r:item_end()
-	-- <CR> toggles the dropdown; x clears the value
+	-- <CR> toggles the dropdown; x unsets the value (no "(unset)" row - see
+	-- body_item_build_type above)
 	acts:set{
-		{ key="<CR>", action=function() state.dd_generator = not state.dd_generator end },
-		{ key="x",    action=function() edit(function(c) c.generator = nil end) end },
+		{ key="<CR>", desc="pick",  action=function() state.dd_generator = not state.dd_generator end },
+		{ key="x",    desc="unset", action=function() edit(function(c) c.generator = nil end) end },
 	}
 	dropdown.render{
 		state = state,
 		open = "dd_generator",
 		choices = generator_choices,
 		text = function(c) return c.label end,
-		on_pick = function(choice)
+		on_pick = function(choice, ctx)
 			edit(function(c) c.generator = choice.value end)
-			state.dd_generator = false
+			ctx.close()
 		end,
 	}
 end
@@ -402,7 +405,7 @@ local function body_item_defines()
 		}
 		r:item_end()
 		acts:set{
-			{ key="<CR>",
+			{ key="<CR>", desc="edit",
 				action=function(dispatched_key)
 					local default = dispatched_key == "i" and "" or d.value
 					if not default then
@@ -417,7 +420,7 @@ local function body_item_defines()
 							edit(function(c) define_set(c, d.name, v) end)
 						end)
 				end },
-			{ key="<S-CR>",
+			{ key="<S-CR>", desc="rename",
 				action=function(dispatched_key)
 					local default = dispatched_key == "I" and "" or d.name
 					if not default then
@@ -444,7 +447,7 @@ local function body_item_defines()
 
 				end },
 			{
-				key="x",
+				key="x", desc="clear",
 				action=function()
 					edit(function(c) define_clear(c, d.name) end)
 				end },
@@ -457,7 +460,7 @@ local function body_item_add_define()
 	r:line2{{ text="+Add -Define", hl=HL.Action }}
 	r:item_end()
 	acts:set{
-		{ key="<CR>",
+		{ key="<CR>", desc="add",
 			action=function()
 				vim.ui.input(
 					{ prompt = "NAME=VALUE: " },
@@ -477,8 +480,21 @@ end
 
 local function body_item_command_preview()
 	r:item_begin()
-	render_command_preview(cmake.command_parts(config_filter_preset(eff_config, eff_source)))
+	local raw = config_filter_preset(eff_config, eff_source)
+	render_command_preview(cmake.command_parts(raw))
 	r:item_end()
+	acts:set{
+		{ key="<C-c>", desc="copy",
+			action=function()
+				-- the "+" register, not the unnamed one - a plain yank in the
+				-- body buffer shouldn't collide with this, and this shouldn't
+				-- clobber the user's last yank either. cmake.command() (not
+				-- command_parts' multi-line \-continued display form) is what's
+				-- actually pastable into a shell one-liner.
+				vim.fn.setreg("+", cmake.command(raw))
+				vim.notify("cmake_menu: copied command to clipboard", vim.log.levels.INFO)
+			end },
+	}
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -489,23 +505,21 @@ end
 local function render(m)
 	tabs.render(m.header)
 
-	-- footer: key hint
-	do
-		local text = " tab/S-tab switch   j/k move   q quit"
-		m.footer:set_lines({ text })
-		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
-	end
-
 	-- Gated on the Project tab having settled on a config: float.lua/tabs.lua
 	-- have no notion of a disabled/hidden tab (tabs.step()/tabs.open() switch
 	-- unconditionally), so this renders a single explanatory line in place of
-	-- the body instead.
+	-- the body instead. Nothing is selectable here, so the footer stays the
+	-- generic movement hint rather than a per-item one.
 	if not project.has_config() then
 		local body = render_mod.new(m.body)
 		body.margin = "  "
 		body:line("")
 		body:line2{{ text="pick a cmake preset or set a build dir in the Project tab first", hl=HL.Dim }}
 		body:render()
+
+		local text = " tab/S-tab switch   j/k move   q quit"
+		m.footer:set_lines({ text })
+		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
 		return
 	end
 
@@ -542,7 +556,17 @@ local function render(m)
 	body_item_command_preview()
 
 	r:render()
-	r:render_selection(state)
+	r:render_selection(state) -- clamps state.sel in place; footer reads the clamped value
+
+	-- footer: the selected item's own actions, not a generic movement hint -
+	-- j/k/tab are assumed known, so repeating them here added nothing (see
+	-- cmake_menu.tab_project's identical footer).
+	do
+		local text = " " .. acts:hint(state.sel)
+		m.footer:set_lines({ text })
+		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
+	end
+
 	r = nil
 end
 
@@ -565,6 +589,7 @@ function M.open()
 		{ lhs="<CR>",   rhs=function() acts:dispatch(state.sel, "<CR>"); m:render() end },
 		{ lhs="<S-CR>", rhs=function() acts:dispatch(state.sel, "<S-CR>"); m:render() end },
 		{ lhs="x",      rhs=function() acts:dispatch(state.sel, "x"); m:render() end },
+		{ lhs="<C-c>",  rhs=function() acts:dispatch(state.sel, "<C-c>") end },
 	}
 	m:map(tabs.mappings())
 	return m
