@@ -322,9 +322,15 @@ local function render(m)
 	acts:set{ key = "<CR>", desc = "pick", action = function()
 		state.dd_root = not state.dd_root
 	end }
-	acts:set{ key = "x", desc = "clear override", action = function()
-		project.set_root(nil)
-	end }
+	-- "clear override" only makes sense when there's one to clear - a root that
+	-- resolved via known_projects/marker-sniffing isn't a session override, and
+	-- project.set_root(nil) against a non-override root would silently do
+	-- nothing (there's nothing in cpp_project.session_roots to remove).
+	if project.found_via and project.found_via.source == "session_roots" then
+		acts:set{ key = "x", desc = "clear override", action = function()
+			project.set_root(nil)
+		end }
+	end
 
 	-- the expansion itself: candidate roots (state-dependent) + pick callback.
 	-- render() also collapses the dropdown when state.sel steps off it, writing
