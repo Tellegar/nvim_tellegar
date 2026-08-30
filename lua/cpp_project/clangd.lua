@@ -3,14 +3,18 @@
 -- One real client per project root, via vim.lsp.start() (not the static
 -- vim.lsp.enable path). vim.lsp.start's default reuse_client predicate only
 -- compares client.name and client.config.root_dir - not bufnr, not cmd - so
--- calling M.start() unconditionally from every qualifying buffer's FileType
--- event already gives "one client per root, buffers just attach": nvim's own
--- client registry does the root->client dedup, no bookkeeping needed here.
+-- calling M.start() unconditionally from every call site already gives "one
+-- client per root, buffers just attach": nvim's own client registry does the
+-- root->client dedup, no bookkeeping needed here.
 --
--- Consumers, not owners: the FileType c/cpp/objc/objcpp/cuda autocmd here is
--- the owner (see M.setup()); cmake_menu is a consumer, calling M.start when
--- the user re-picks a project root from the UI. Root detection itself lives
--- in cpp_project.find_root - this module only starts/attaches clients.
+-- Not autostarted: starting is a deliberate action from cmake_menu (the
+-- "start lsp" row in tab_test, after the user has confirmed the project's
+-- build dir), not a FileType autocmd - a not-yet-configured build dir makes
+-- clangd fail to find its compile database, so starting eagerly just floods
+-- the buffer with bogus errors. cmake_menu.setup() owns the FileType
+-- c/cpp/objc/objcpp/cuda autocmd that offers the menu instead (see its
+-- header). Root detection lives in cpp_project.find_root - this module only
+-- starts/attaches clients, given a root someone else resolved.
 --
 -- TODO(next): when a session's root override changes for a buffer already
 -- attached to a client at the old root, nvim won't retarget that client in
@@ -18,8 +22,6 @@
 -- stop-old/reattach-buffers path (old lua/cpp.lua's restart_clangd did this
 -- for same-root restarts; the override case additionally needs the new
 -- root_dir), to be wired from cmake_menu once its root-picker is real.
-
-local cpp_project = require("cpp_project")
 
 local M = {}
 
@@ -49,19 +51,6 @@ function M.start(bufnr, root)
 		filetypes = M.FILETYPES,
 		capabilities = { offsetEncoding = { "utf-8" } },
 	}, { bufnr = bufnr })
-end
-
-function M.setup()
-	vim.api.nvim_create_autocmd("FileType", {
-		group = vim.api.nvim_create_augroup("cpp_project_clangd", { clear = true }),
-		pattern = M.FILETYPES,
-		callback = function(args)
-			local root = cpp_project.find_root(args.buf)
-			if root then
-				M.start(args.buf, root)
-			end
-		end,
-	})
 end
 
 return M

@@ -30,12 +30,11 @@ Require("config.callbacks")
 Require("config.options")
 Require("config.lazy")
 
--- clangd is started per-project-root (not via the static vim.lsp.enable path)
--- so that multiple C/C++ projects open in different windows/tabs get
--- independent clients with correct --compile-commands-dir each. Moved out of
--- lsp/conf.lua (that file is meant to stay lazy-loaded LSP config only) --
--- commented out mid cpp/ -> cmake_menu rename, require paths are stale.
--- require("cmake_menu.cpp").setup()
+-- cmake_menu offers itself on the first C/C++ buffer of a project root it
+-- doesn't know yet, rather than clangd autostarting - see cmake_menu/init.lua.
+-- Moved out of lsp/conf.lua (that file is meant to stay lazy-loaded LSP config
+-- only).
+require("cmake_menu").setup()
 
 -- scratch prototype surface for the :Cpp config section (:CppScratch).
 -- throwaway - remove once the config-section layout is settled.

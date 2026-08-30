@@ -60,10 +60,17 @@ function M.set_root(dir)
 	M.refresh()
 end
 
---- Capture the current buffer and resolve its root. Call once at the entry
---- point, before the float opens (while buffer 0 is still the user's file).
-function M.capture()
-	M.buf = vim.api.nvim_get_current_buf()
+--- Capture `bufnr` (default: the current buffer) and resolve its root. Call
+--- once at the entry point, before the float opens (while buffer 0 is still
+--- the user's file). Takes an explicit bufnr for callers driven by an event's
+--- own buffer (e.g. cmake_menu.setup()'s FileType autocmd) rather than
+--- "whatever's current" - a FileType event can be re-fired nested (lazy.nvim
+--- re-triggers it after lazy-loading plugins that match it), by which point
+--- the current buffer may already be the float's own body buffer from the
+--- first firing, not the file that triggered it.
+---@param bufnr integer?
+function M.capture(bufnr)
+	M.buf = bufnr or vim.api.nvim_get_current_buf()
 	M.refresh()
 end
 

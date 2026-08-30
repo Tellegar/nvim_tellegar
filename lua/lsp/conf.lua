@@ -19,7 +19,6 @@
 
 
 require("lsp.lua_ls-shrink_unnecessary").setup()
-require("cpp_project.clangd").setup()
 
 -- neocmakelsp (mason-installed, auto-enabled by mason-lspconfig) ships its own
 -- lint: command case plus "[C0301] Line too long". The server has no per-rule
