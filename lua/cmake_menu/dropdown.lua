@@ -35,6 +35,7 @@
 
 local render_mod = require("cmake_menu.render")
 local actions = require("cmake_menu.actions")
+local HL = require("cmake_menu.hl")
 
 local M = {}
 
@@ -43,6 +44,7 @@ local M = {}
 ---@field open string                        -- key in `state` holding this dropdown's expanded bool
 ---@field choices fun(): any[]               -- current choices, recomputed each render
 ---@field text (fun(c: any): string)?        -- choice -> display text (default tostring)
+---@field tag (fun(c: any): string?)?        -- choice -> right-aligned dim label (e.g. its source), nil to omit
 ---@field on_pick fun(c: any)                -- picks the choice; should also close (state[open]=false)
 
 --- Render the choice list under an (already-drawn) anchor row while open, and
@@ -78,7 +80,12 @@ function M.render(o)
 	local text = o.text or tostring
 	for _, choice in ipairs(choices) do
 		r:item_begin()
-		r:line2{ "  ", { text = text(choice) } }
+		local tag = o.tag and o.tag(choice)
+		if tag then
+			r:line2{ "  ", { text = text(choice) }, { fill = true }, { text = tag, hl = HL.Dim } }
+		else
+			r:line2{ "  ", { text = text(choice) } }
+		end
 		r:item_end()
 		-- picking returns focus to the anchor row (its choices are about to
 		-- collapse away, so leaving sel on the choice would land it elsewhere)
