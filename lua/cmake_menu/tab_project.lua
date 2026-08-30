@@ -160,8 +160,9 @@ local function body_item_config(r)
 	r:line2{ "config", { fill=true }, { text=label, hl=hl } }
 	r:item_end()
 	acts:set{
-		{ key="<CR>", desc="pick",  action=function() state.dd_config = not state.dd_config end },
-		{ key="x",    desc="unset", action=function() project.unselect() end },
+		{ key="<CR>",   desc="pick",      action=function() state.dd_config = not state.dd_config end },
+		{ key="x",      desc="unset",     action=function() project.unselect() end },
+		{ key="<S-CR>", desc="configure", action=function() tabs.open("Configure") end },
 	}
 	dropdown.render{
 		state = state,
@@ -384,6 +385,10 @@ function M.open()
 		{ lhs="<Up>",   rhs=function() move(-1) end },
 		{ lhs="<CR>",   rhs=function() acts:dispatch(state.sel, "<CR>"); m:render() end },
 		{ lhs="x",      rhs=function() acts:dispatch(state.sel, "x"); m:render() end },
+		-- no m:render() after: the config item's <S-CR> handler switches tabs,
+		-- which replaces this float outright (float.open is a singleton) - `m`
+		-- is the old, now-closed one by the time dispatch returns.
+		{ lhs="<S-CR>", rhs=function() acts:dispatch(state.sel, "<S-CR>") end },
 		-- re-rendered like every other action: tracking re-resolves the root, so
 		-- the "found via" row above is stale the moment it returns
 		{ lhs="<C-s>",  rhs=function() track_project(); m:render() end },
