@@ -14,7 +14,28 @@ local HL = {
 	SelectedMarker = "SelectedMarker",
 	Action         = "Action",
 	HiddenCursor   = "HiddenCursor",
+	FooterBg       = "FooterBg", -- winhighlight target, not a text hl - see float.lua's footer pane
 }
+
+--- `base_group`'s bg, nudged by `delta` per channel (negative = darker,
+--- positive = lighter) - so the footer reads as "the same surface, slightly
+--- off" rather than an unrelated color. nil if `base_group` has no bg
+--- (transparent background colorschemes).
+---@param base_group string
+---@param delta integer
+---@return integer?
+local function shift_bg(base_group, delta)
+	local bg = vim.api.nvim_get_hl(0, { name = base_group, link = false }).bg
+	if not bg then
+		return nil
+	end
+	local r = math.floor(bg / 65536) % 256
+	local g = math.floor(bg / 256) % 256
+	local b = bg % 256
+	local function clamp(v) return math.max(0, math.min(255, v)) end
+	r, g, b = clamp(r + delta), clamp(g + delta), clamp(b + delta)
+	return r * 65536 + g * 256 + b
+end
 
 -- Defined via a function, not a one-shot `do` block: `:colorscheme` runs
 -- `:hi clear`, which wipes these groups, and the module is cached so the side
@@ -33,6 +54,9 @@ local function apply()
 	set_hl(HL.SelectedMarker, { link = "Special" })
 	set_hl(HL.Action,         { link = "Function" })
 	set_hl(HL.HiddenCursor,   { blend = 100, nocombine = true })
+
+	local footer_bg = shift_bg("NormalFloat", -4)
+	set_hl(HL.FooterBg, footer_bg and { bg = footer_bg } or { link = "NormalFloat" })
 end
 
 apply() -- once at first require

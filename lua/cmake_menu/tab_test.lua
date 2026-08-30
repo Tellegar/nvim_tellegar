@@ -7,7 +7,9 @@
 
 local HL = require("cmake_menu.hl")
 local actions = require("cmake_menu.actions")
+local clangd = require("cpp_project.clangd")
 local cmake_presets = require("cpp_project.cmake_presets")
+local cpp_project = require("cpp_project")
 local dropdown = require("cmake_menu.dropdown")
 local float = require("cmake_menu.float")
 local render_mod = require("cmake_menu.render")
@@ -104,8 +106,8 @@ local function body_item_preset(r, eff_config, eff_source)
 	}
 	r:item_end()
 	acts:set{
-		{ key="<CR>", action=function() state.dd_preset = not state.dd_preset end },
-		{ key="x",    action=function() config.cmake_preset_name = nil end },
+		{ key="<CR>", desc="pick",  action=function() state.dd_preset = not state.dd_preset end },
+		{ key="x",    desc="unset", action=function() config.cmake_preset_name = nil end },
 	}
 	dropdown.render{
 		state = state,
@@ -155,7 +157,7 @@ local function body_item_build_dir(r, eff_config, eff_source)
 	}
 	r:item_end()
 	acts:set{
-		{ key="<CR>",
+		{ key="<CR>", desc="edit",
 			action=function()
 				vim.ui.input(
 					{ prompt = "build dir: ", default = eff_config.build_dir },
@@ -165,10 +167,66 @@ local function body_item_build_dir(r, eff_config, eff_source)
 					end
 				)
 			end },
-		{ key="x",
+		{ key="x", desc="reset",
 			action=function()
 				config.build_dir = nil
 			end },
+	}
+end
+
+--- The "start lsp" row: a deliberate, explicit action rather than an
+--- autostart, so it only fires once the preset/build-dir rows above read the
+--- way the user wants - see cpp_project.clangd's header for why. Also marks
+--- the root known, so cmake_menu.setup()'s autocmd stops offering the menu
+--- for it.
+---@param r CMenu.Render
+local function body_item_start_lsp(r)
+	r:item_begin()
+	local label = cpp_project.known_projects[session.root] and "restart lsp" or "start lsp"
+	r:line2{{ text="+" .. label, hl=HL.Action }}
+	r:item_end()
+	acts:set{
+		{ key="<CR>", desc=label,
+			action=function()
+				clangd.start(session.buf, session.root)
+				cpp_project.known_projects[session.root] = true
+			end },
+	}
+end
+
+--- Visual-only scratch row: every key combo cmake_menu.keyicon knows how to
+--- render, bound to nops. Select it and read the footer to check the icons
+--- (not wired into open()'s m:map, so most of these don't actually fire -
+--- that's fine, this item exists to be looked at, not pressed). Remove once
+--- keyicon's rendering has been eyeballed against the real terminal font.
+---@param r CMenu.Render
+local function body_item_keyicon_scratch(r)
+	r:item_begin()
+	r:line2{{ text="(keyicon scratch)", hl=HL.Dim }}
+	r:item_end()
+	local nop = function() end
+	acts:set{
+		{ key="<CR>",        desc="plain",      action=nop },
+		{ key="<S-CR>",      desc="shift",      action=nop },
+		{ key="<C-CR>",      desc="ctrl",       action=nop },
+		{ key="<C-S-CR>",    desc="ctrl+shift", action=nop },
+		{ key="x",           desc="letter",     action=nop },
+		{ key="<Tab>",       desc="tab",        action=nop },
+		{ key="<S-Tab>",     desc="s-tab",      action=nop },
+		{ key="<Esc>",       desc="esc",        action=nop },
+		{ key="<BS>",        desc="bs",         action=nop },
+		{ key="<Del>",       desc="del",        action=nop },
+		{ key="<Up>",        desc="up",         action=nop },
+		{ key="<Down>",      desc="down",       action=nop },
+		{ key="<Left>",      desc="left",       action=nop },
+		{ key="<Right>",     desc="right",      action=nop },
+		{ key="<Home>",      desc="home",       action=nop },
+		{ key="<End>",       desc="end",        action=nop },
+		{ key="<PageUp>",    desc="pgup",       action=nop },
+		{ key="<PageDown>",  desc="pgdn",       action=nop },
+		{ key="<Space>",     desc="space",      action=nop },
+		{ key="<M-x>",       desc="alt",        action=nop },
+		{ key="<D-a>",       desc="cmd",        action=nop },
 	}
 end
 
@@ -195,13 +253,6 @@ end
 ---@param m CMenu.Float
 local function render(m)
 	tabs.render(m.header)
-
-	-- footer: key hint
-	do
-		local text = " tab/S-tab switch   j/k move   q quit"
-		m.footer:set_lines({ text })
-		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
-	end
 
 	-- body: a fresh render context per pass; actions rebind to it
 	local r = render_mod.new(m.body)
@@ -240,10 +291,10 @@ local function render(m)
 	}
 	r:item_end()
 	-- the source-root row is the expandable anchor; <CR> toggles its dropdown
-	acts:set{ key = "<CR>", action = function()
+	acts:set{ key = "<CR>", desc = "pick", action = function()
 		state.dd_root = not state.dd_root
 	end }
-	acts:set{ key = "x", action = function()
+	acts:set{ key = "x", desc = "clear override", action = function()
 		session.set_root(nil)
 	end }
 
@@ -267,10 +318,22 @@ local function render(m)
 			body_item_preset(r, eff_config, eff_source)
 		end
 		body_item_build_dir(r, eff_config, eff_source)
+		body_item_start_lsp(r)
 	end
 
+	r:line("")
+	body_item_keyicon_scratch(r)
+
 	r:render()
-	r:render_selection(state)
+	r:render_selection(state) -- clamps state.sel in place; footer reads the clamped value
+
+	-- footer: the selected item's own actions, not a generic movement hint -
+	-- j/k/tab are assumed known, so repeating them here added nothing.
+	do
+		local text = " " .. acts:hint(state.sel)
+		m.footer:set_lines({ text })
+		m.footer:hl(0, 0, { end_col = #text, hl_group = HL.Dim })
+	end
 end
 
 ----------------------------------------------------------------------------------------------------

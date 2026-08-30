@@ -101,7 +101,7 @@ local function setup_window()
 	local col = math.floor((vim.o.columns - width) / 2)
 	local top = math.floor((vim.o.lines - height) / 2) - 1
 
-	local function pane(row, h, enter)
+	local function pane(row, h, enter, winhighlight)
 		local buf = vim.api.nvim_create_buf(false, true)
 		vim.bo[buf].bufhidden = "wipe"
 		vim.bo[buf].filetype = "cmake_menu" -- see which-key.lua: disable.ft
@@ -114,12 +114,20 @@ local function setup_window()
 			style    = "minimal",
 			border   = "none",
 		})
+		if winhighlight then
+			-- append, don't replace: style="minimal" already sets its own
+			-- winhighlight (EndOfBuffer:..., hiding the `~` tildes) - clobbering
+			-- it would bring those back on a pane shorter than its window.
+			local existing = vim.wo[win].winhighlight
+			vim.wo[win].winhighlight = existing ~= "" and (existing .. "," .. winhighlight) or winhighlight
+		end
 		return setmetatable({ buf = buf, win = win }, Pane)
 	end
 
 	self.header = pane(top,           hh, false)
 	self.body   = pane(top + hh,      bh, true) -- focus starts on the body
-	self.footer = pane(top + hh + bh, fh, false)
+	-- footer bg set a shade off the body's via HL.FooterBg (see cmake_menu.hl)
+	self.footer = pane(top + hh + bh, fh, false, "NormalFloat:" .. HL.FooterBg)
 end
 
 local function setup_autocmds()

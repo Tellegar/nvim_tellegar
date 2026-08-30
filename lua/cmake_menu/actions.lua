@@ -20,6 +20,8 @@
 --   -- in a key mapping:
 --   acts:dispatch(sel, key)               -- r is gone; the map remains
 
+local keyicon = require("cmake_menu.keyicon")
+
 local M = {}
 
 --- The action map of the current frame: the one whose begin() ran most recently.
@@ -31,6 +33,7 @@ M.current = nil
 
 ---@class CMenu.Action
 ---@field key string
+---@field desc string?             -- human label for the footer's per-item hint (see hint()); omit to keep a key out of it
 ---@field action fun(key: string)  -- receives the pressed key (so alt keys can branch)
 
 ---@class CMenu.Actions
@@ -77,6 +80,23 @@ function A:dispatch(sel, key)
 			return
 		end
 	end
+end
+
+--- Human hint for the sel-th item's actions, e.g. "↵ edit   x clear" - for a
+--- footer that shows what the currently selected item can do. Keys are
+--- rendered via cmake_menu.keyicon (plain unicode, no nerd-font glyphs - see
+--- its header). Only actions carrying `desc` are included, in set() order; an
+--- item with none (or no actions at all) yields "".
+---@param sel integer
+---@return string
+function A:hint(sel)
+	local parts = {}
+	for _, a in ipairs(self._map[sel] or {}) do
+		if a.desc then
+			parts[#parts + 1] = keyicon.icon(a.key) .. " " .. a.desc
+		end
+	end
+	return table.concat(parts, "   ")
 end
 
 return M

@@ -82,7 +82,7 @@ function M.render(o)
 		r:item_end()
 		-- picking returns focus to the anchor row (its choices are about to
 		-- collapse away, so leaving sel on the choice would land it elsewhere)
-		acts:set{ key = "<CR>", action = function() o.on_pick(choice); state.sel = anchor end }
+		acts:set{ key = "<CR>", desc = "select", action = function() o.on_pick(choice); state.sel = anchor end }
 	end
 end
 
