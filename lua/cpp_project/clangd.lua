@@ -13,7 +13,10 @@
 -- clangd fail to find its compile database, so starting eagerly just floods
 -- the buffer with bogus errors. cmake_menu.setup() owns the FileType
 -- c/cpp/objc/objcpp/cuda autocmd that offers the menu instead (see its
--- header). Root detection lives in cpp_project.find_root - this module only
+-- header). There is a FileType autocmd here too, but it's the opposite of an
+-- autostart: it only attaches buffers to a client that's *already* running
+-- (see watch_new_buffers), and it registers only once someone has started
+-- one. Root detection lives in cpp_project.find_root - this module only
 -- starts/attaches clients, given a root someone else resolved.
 --
 -- TODO(next): when a session's root override changes for a buffer already
@@ -22,6 +25,8 @@
 -- stop-old/reattach-buffers path (old lua/cpp.lua's restart_clangd did this
 -- for same-root restarts; the override case additionally needs the new
 -- root_dir), to be wired from cmake_menu once its root-picker is real.
+
+local cpp_project = require("cpp_project")
 
 local M = {}
 
@@ -37,6 +42,64 @@ M.CMD = {
 	"-j=16",
 	"--pch-storage=memory",
 }
+
+--- Whether `bufnr` is a source buffer that belongs to `root` - the test both
+--- attach paths below share. "Belongs" is `cpp_project.find_root` agreeing on
+--- the root, not a mere path-prefix check: a nested project inside another
+--- project's tree resolves to its own root, and attaching those files to the
+--- outer client would hand clangd a compile database that doesn't describe
+--- them. Equality against the client's root is therefore the whole point -
+--- descendants of a root that resolve elsewhere are deliberately excluded, as
+--- are buffers that resolve to no root at all (unnamed ones included, which
+--- find_root returns nil for).
+---@param bufnr integer
+---@param root string
+---@return boolean
+local function belongs_to(bufnr, root)
+	if not (vim.api.nvim_buf_is_loaded(bufnr) and vim.tbl_contains(M.FILETYPES, vim.bo[bufnr].filetype)) then
+		return false
+	end
+	return cpp_project.find_root(bufnr) == root
+end
+
+--- Attaches every already-open source buffer belonging to `root` to the
+--- just-started client. vim.lsp.start() only attaches the one buffer it's
+--- given, and there's no autostart autocmd to catch the rest (see the
+--- header), so without this a project's other open files stay LSP-less until
+--- each is re-entered - the "why does it only attach to the buffer I started
+--- it from" case. The starting buffer is in this set too when it belongs to
+--- `root`; attaching twice is a no-op.
+---@param client_id integer
+---@param root string
+local function attach_open_buffers(client_id, root)
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if belongs_to(buf, root) then
+			vim.lsp.buf_attach_client(buf, client_id)
+		end
+	end
+end
+
+--- The forward-looking half of attach_open_buffers: a source file opened
+--- *after* a client is up attaches to it too - to the client whose root is
+--- the file's own root, and to no other (see belongs_to). Not an autostart:
+--- it only ever attaches to a client someone already started deliberately, so
+--- a project whose lsp row was never pressed stays untouched. Registered on
+--- first start() (clear=true makes re-registering idempotent) and left in
+--- place across stops, since it does nothing while no client matches.
+local function watch_new_buffers()
+	local group = vim.api.nvim_create_augroup("cpp_project.clangd", { clear = true })
+	vim.api.nvim_create_autocmd("FileType", {
+		group = group,
+		pattern = M.FILETYPES,
+		callback = function(args)
+			for _, c in ipairs(vim.lsp.get_clients({ name = "clangd" })) do
+				if c.config.root_dir and belongs_to(args.buf, c.config.root_dir) then
+					vim.lsp.buf_attach_client(args.buf, c.id)
+				end
+			end
+		end,
+	})
+end
 
 --- Starts a clangd client rooted at `root` and attaches `bufnr` to it, or -
 --- via vim.lsp.start's (name, root_dir) reuse - attaches `bufnr` to the
@@ -57,7 +120,7 @@ function M.start(bufnr, root, compile_commands_dir)
 	-- (order doesn't matter to clangd, but this keeps argv[0] recognizable).
 	local cmd = { M.CMD[1], "--compile-commands-dir=" .. compile_commands_dir }
 	vim.list_extend(cmd, M.CMD, 2)
-	vim.lsp.start({
+	local id = vim.lsp.start({
 		name = "clangd",
 		cmd = cmd,
 		cmd_cwd = root,
@@ -65,6 +128,12 @@ function M.start(bufnr, root, compile_commands_dir)
 		filetypes = M.FILETYPES,
 		capabilities = { offsetEncoding = { "utf-8" } },
 	}, { bufnr = bufnr })
+	if not id then
+		return
+	end
+	attach_open_buffers(id, root)
+	watch_new_buffers()
+	return id
 end
 
 --- Finds the clangd client for `root`, initialized or not. Threads
@@ -83,6 +152,29 @@ local function find(root)
 			return c
 		end
 	end
+end
+
+--- The buffers currently attached to `root`'s client, in bufnr order. Reads
+--- the client's own `attached_buffers` rather than a list kept here: buffers
+--- leave a client on their own (wipeout detaches them), so any local copy
+--- would go stale without anything telling us. Unloaded buffers are dropped -
+--- a bufnr the client still lists but that no longer has a window's worth of
+--- content behind it isn't something the menu can meaningfully offer to open.
+---@param root string?
+---@return integer[]
+function M.buffers(root)
+	local c = find(root)
+	if not c then
+		return {}
+	end
+	local bufs = {}
+	for buf in pairs(c.attached_buffers) do
+		if vim.api.nvim_buf_is_loaded(buf) then
+			bufs[#bufs + 1] = buf
+		end
+	end
+	table.sort(bufs)
+	return bufs
 end
 
 --- Stops the clangd client for `root`, if any - initialized or still starting

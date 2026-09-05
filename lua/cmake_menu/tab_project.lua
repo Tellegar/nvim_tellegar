@@ -218,6 +218,48 @@ local function body_item_start_lsp(r)
 	}
 end
 
+--- One row per buffer attached to the project's clangd, under the lsp row -
+--- the answer to "is this client actually serving the files I think it is",
+--- which nothing else in the menu shows. <CR> jumps to the buffer, so the
+--- list doubles as a project-file picker scoped to what clangd already knows.
+---
+--- Nothing is rendered while the client is stopped (clangd.buffers() is empty
+--- then), so these rows appear and disappear with the row above them.
+---
+--- Paths are shown relative to the root, which is on screen a few rows up;
+--- utils.relative_to leaves a buffer outside the root absolute, and that's
+--- worth seeing rather than hiding - it means the client adopted a file the
+--- project root doesn't cover.
+---@param r CMenu.Render
+---@param m CMenu.Float
+local function body_items_lsp_buffers(r, m)
+	for _, buf in ipairs(clangd.buffers(project.root)) do
+		local name = vim.api.nvim_buf_get_name(buf)
+		local segs = {
+			"  ",
+			{ text = name ~= "" and utils.relative_to(project.root, name) or "[No Name]" },
+		}
+		if buf == session.buf then
+			segs[#segs + 1] = { fill = true }
+			segs[#segs + 1] = { text = "current", hl = HL.Dim }
+		end
+		r:item_begin()
+		r:line2(segs)
+		r:item_end()
+		acts:set{ key = "<CR>", desc = "open", action = function()
+			-- deferred: the <CR> mapping re-renders the float after dispatch
+			-- returns, which a closed float can't survive (its panes are gone).
+			-- Scheduling puts the close *after* that render instead.
+			vim.schedule(function()
+				m:close()
+				if vim.api.nvim_buf_is_valid(buf) then
+					vim.api.nvim_set_current_buf(buf)
+				end
+			end)
+		end }
+	end
+end
+
 --- Visual-only scratch rows: every key combo cmake_menu.keyicon knows how to
 --- render, bound to nops. Select one and read the footer to check the icons
 --- (not wired into open()'s m:map, so most of these don't actually fire -
@@ -373,6 +415,7 @@ local function render(m)
 		body_item_config(r)
 		if project.build_dir() then
 			body_item_start_lsp(r)
+			body_items_lsp_buffers(r, m)
 		end
 	end
 
