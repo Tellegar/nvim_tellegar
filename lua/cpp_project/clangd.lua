@@ -52,11 +52,24 @@ M.CMD = {
 --- descendants of a root that resolve elsewhere are deliberately excluded, as
 --- are buffers that resolve to no root at all (unnamed ones included, which
 --- find_root returns nil for).
+---
+--- The URI-scheme test is what keeps plugin-owned pseudo-buffers out: a
+--- `:Gitsigns diffthis` buffer is named `gitsigns://<gitdir>//<rev>:<file>`,
+--- which is filetype cpp and whose name still contains the project's real
+--- path, so find_root happily resolves it to `root`. Attaching it makes nvim
+--- send clangd a `gitsigns://` textDocument.uri, and clangd answers every
+--- request on it with "clangd only supports 'file' URI scheme for workspace
+--- files". Same for fugitive://, oil:// and friends. vim.uri_from_bufnr is
+--- the exact string the LSP client would send, so testing it rules out
+--- precisely the buffers clangd would reject.
 ---@param bufnr integer
 ---@param root string
 ---@return boolean
 local function belongs_to(bufnr, root)
 	if not (vim.api.nvim_buf_is_loaded(bufnr) and vim.tbl_contains(M.FILETYPES, vim.bo[bufnr].filetype)) then
+		return false
+	end
+	if not vim.uri_from_bufnr(bufnr):match("^file://") then
 		return false
 	end
 	return cpp_project.find_root(bufnr) == root
