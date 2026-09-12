@@ -6,14 +6,18 @@
 -- re-captures, so buf 0 becoming the float's buffer can't corrupt the state.
 --
 -- setup() owns the FileType c/cpp/objc/objcpp/cuda autocmd that offers the
--- menu on a project nvim hasn't seen configured yet: it's the counterpart to
--- cpp_project.clangd not autostarting - the menu is where the user confirms
--- the config to use (tab_project's "config" row) and then starts clangd
--- themselves (its "start lsp" row), which is also what marks the root known.
--- A root project_store already tracks doesn't reopen the menu on every
--- subsequent buffer in that project (see the autocmd below): its saved config
--- is loaded into cpp_project.session instead of re-offering the menu to pick
--- one.
+-- menu on a project nvim hasn't seen configured yet: the menu is where the
+-- user confirms the config to use (tab_project's "config" row), tracks the
+-- root (<C-s>) and starts clangd (its "start lsp" row). A root project_store
+-- already tracks doesn't reopen the menu on every subsequent buffer in that
+-- project (see the autocmd below): its saved config is loaded into
+-- cpp_project.session instead of re-offering the menu to pick one.
+--
+-- That early return is exactly where cpp_project.clangd's own FileType
+-- autocmd takes over: a tracked root is one clangd may autostart on, an
+-- untracked one is one the menu offers itself for. The two autocmds partition
+-- the cases between them rather than either knowing about the other - see
+-- cpp_project/clangd.lua's M.autostart.
 
 local project = require("cpp_project.session")
 local session = require("cmake_menu.session")

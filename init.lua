@@ -30,10 +30,14 @@ Require("config.callbacks")
 Require("config.options")
 Require("config.lazy")
 
--- cmake_menu offers itself on the first C/C++ buffer of a project root it
--- doesn't know yet, rather than clangd autostarting - see cmake_menu/init.lua.
--- Moved out of lsp/conf.lua (that file is meant to stay lazy-loaded LSP config
--- only).
+-- The two halves of "what happens on the first C/C++ buffer of a project":
+-- clangd autostarts if the root is tracked and its config points at a built
+-- build dir (see cpp_project/clangd.lua's M.autostart), and otherwise
+-- cmake_menu offers itself so the root can be configured and tracked (see
+-- cmake_menu/init.lua). Exactly one of them acts on any given buffer, so the
+-- order here is cosmetic. Both moved out of lsp/conf.lua (that file is meant
+-- to stay lazy-loaded LSP config only).
+require("cpp_project.clangd").setup()
 require("cmake_menu").setup()
 
 -- scratch prototype surface for the :Cpp config section (:CppScratch).
