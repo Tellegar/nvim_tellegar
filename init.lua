@@ -38,6 +38,7 @@ Require("config.lazy")
 -- order here is cosmetic. Both moved out of lsp/conf.lua (that file is meant
 -- to stay lazy-loaded LSP config only).
 require("cpp_project.clangd").setup()
+require("cpp_project.modules").setup()
 require("cmake_menu").setup()
 
 -- scratch prototype surface for the :Cpp config section (:CppScratch).
