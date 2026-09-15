@@ -49,6 +49,19 @@ autocmd("TextYankPost", {
 
 g.python_recommended_style = 0
 
+-- load project-local .nvim.lua (asks to :trust each file once)
+o.exrc = true
+
+-- Windows nvim started from an MSYS2 shell inherits shell=bash.exe from $SHELL
+-- but keeps cmd.exe's flags ("/s /c"), breaking :!, :terminal and termopen()
+if vim.fn.has("win32") == 1 and vim.o.shell:match("sh%.exe$") then
+	o.shellcmdflag = "-c"
+	o.shellquote = ""
+	o.shellxquote = ""
+	o.shellpipe = "2>&1 | tee"
+	o.shellredir = ">%s 2>&1"
+end
+
 autocmd("FileType", {
 	pattern = "lua",
 	callback = function()
