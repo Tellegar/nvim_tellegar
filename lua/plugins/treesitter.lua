@@ -60,6 +60,8 @@ return {
 	},
 	{	dir = "~/projects/neovim/namespace-hint.nvim",
 		name = "namespace-hint",
+		-- local checkout; skip on machines that don't have it
+		cond = vim.uv.fs_stat(vim.fn.expand("~/projects/neovim/namespace-hint.nvim")) ~= nil,
 		ft = "cpp",
 		opts = {}
 		-- config = function()
